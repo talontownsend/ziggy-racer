@@ -1,0 +1,5 @@
+{
+  "comment": "User-chosen track sections for the base-controller vs human per-section comparison (refline_plan stations 0-999, lap 1073.9 m). S13 wraps through start/finish.",
+  "boundaries": [56, 136, 236, 340, 388, 428, 512, 568, 596, 656, 732, 820, 928],
+  "plan_min_kmh": {"S1": 126, "S2": 115, "S3": 153, "S4": 96, "S5": 65, "S6": 85, "S7": 93, "S8": 133, "S9": 124, "S10": 150, "S11": 133, "S12": 159, "S13": 186}
+}

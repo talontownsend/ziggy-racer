@@ -1,0 +1,33 @@
+{
+  "vehicle": "2019 Toyota Tacoma TRD Pro Forza Edition (X 999)",
+  "read_from_tuning_menu": "2026-07-04",
+  "menu": {
+    "braking_60_0_ft": 68.0,
+    "braking_100_0_ft": 168.2,
+    "lateral_g_60mph": 1.86,
+    "lateral_g_120mph": 2.39,
+    "zero_to_60_s": 7.119,
+    "zero_to_100_s": 19.789,
+    "top_speed_mph": 268.4,
+    "mech_balance": 0.58,
+    "aero_balance": 0.51,
+    "aero_efficiency": 0.793,
+    "tire_pressure_psi_front": 31.0,
+    "tire_pressure_psi_rear": 29.0
+  },
+  "derived": {
+    "grip_line_a0_ms2": 16.5,
+    "grip_line_k": 0.00241,
+    "brake_decel_60_ms2": 17.4,
+    "brake_decel_100_ms2": 19.5,
+    "top_speed_ms": 120.0,
+    "accel_0_60_avg_ms2": 3.77,
+    "accel_60_100_avg_ms2": 1.41
+  },
+  "measured_vs_menu": {
+    "grip_slope_ratio": 1.04,
+    "grip_intercept_ratio_at_current_usable": 1.47,
+    "brake_ratio": 1.54,
+    "note": "Menu friction magnitudes sandbagged by a consistent ~1.5x for this X-class build; menu SHAPE (downforce slope, friction-circle brake/grip ratio 0.95) matches measurement. Car-agnostic recipe: menu shape x measured game-vs-menu scale factor; measurement always outranks menu upward."
+  }
+}

@@ -1,0 +1,31 @@
+# === Ziggy Racer — .gitignore ===
+
+# --- recordings/: ignore ALL of it (multi-GB telemetry logs, survey sweeps, learned
+#     online state, dev datasets) EXCEPT the small derived model artifacts that make the
+#     pipeline inspectable and let the controller run. ---
+recordings/*
+!recordings/refline_plan.npz
+!recordings/surface_cap.npz
+!recordings/surface_sheet.npz
+!recordings/bank_map.npz
+!recordings/load_map.npz
+!recordings/sections.json
+!recordings/vehicle_spec.json
+
+# --- Runtime logs & captured artifacts ---
+*.log
+follower_std*.log
+follower_std*.txt
+wd_fail_*.log
+survey.log
+train_*.log
+*.png
+scratchpad/
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+
+# --- Local machine cruft ---
+*.bak
+*.orig

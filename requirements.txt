@@ -1,0 +1,13 @@
+# Ziggy Racer — Python dependencies (Python 3.12, Windows)
+numpy
+scipy
+matplotlib
+pillow
+vgamepad          # virtual Xbox 360 pad — also needs the ViGEmBus kernel driver (see below)
+winocr            # Windows OCR for the AFK recovery state machine (Windows-only)
+
+# vgamepad requires the ViGEmBus driver installed separately, then a reboot:
+#   https://github.com/nefarius/ViGEmBus/releases
+#
+# Forza Horizon 6 must have "Data Out" telemetry enabled:
+#   Settings -> HUD and Gameplay -> Data Out: ON, IP 127.0.0.1, Port 7777
