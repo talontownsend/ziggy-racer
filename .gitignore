@@ -29,3 +29,7 @@ __pycache__/
 # --- Local machine cruft ---
 *.bak
 *.orig
+
+# keep curated images used by the docs/README
+!docs/media/*.png
+!docs/media/*.jpg
