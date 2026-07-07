@@ -31,9 +31,46 @@ the laps that actually slide.*
 because slowing an understeering car reduces how wide it runs — the *physics* is unchanged, only
 the mechanism's *direction* was mislabeled. But it re-frames the shipped S9 grip margin as a
 **downstream patch**, not the cure: it sits at the S9 approach, downstream of where the car
-actually goes wrong (the S7 crest). The proper fix targets S7 itself. That work is in progress
-(see the S7 experiments) — this document's original S9 narrative is kept below for the record,
-but read "inside" as "wide/outside" throughout.
+actually goes wrong (the S7 crest). The proper fix targets S7 itself.
+
+---
+
+## S7 fix — campaign outcome (2026-07-07): shipped `s7m` + ACM
+
+Following the correction, I ran a full A/B campaign on a **dedicated S7-approach grip margin**
+(`s7m`: shave target speed by a factor in an s-range before/through the S7 crest).
+
+**A methodology trap, and the fix.** The first pass produced wild, *non-monotonic* results
+(0.90 margin → 33% S9 slides; 0.85 → 4%; combining two good fixes → 36%). The cause was a
+**confound: the self-learning speed map (`vtrim`) drifts between soaks** — a slide-heavy soak
+makes it cut speed, so the next soak looks clean; a clean soak lets it re-earn speed, so the next
+slides. Every 30-min A/B saw a *different* map. The fix was to run every config on the **same
+frozen map**. (Subtlety that cost time: `vtrim_on=0` does **not** freeze the map — it removes the
+map's speed *boost* entirely. The correct freeze is `vtrim_on=1` with all learning rates zeroed.)
+
+**Confound-free result** (all configs on one frozen map, verified stable):
+
+| Config | S7 offset | S7 crash rate | S9 slides |
+|---|---:|---:|---:|
+| baseline (no margin) | −5.88 m wide | **28 %** | 0 % |
+| ACM only | −2.79 m | 0 % | 0 % |
+| **s7m 0.85 only** | **−0.63 m (on the line)** | **0 %** | 0 % |
+| **s7m 0.85 + ACM** (shipped) | −0.98 m | 0 % | 0 % |
+
+On a fixed map the S7 margin robustly takes the car from 4–6 m wide (crashing off at S7 28 % of
+laps) to **on the racing line, 0 % crashes** — a clean, confound-free win that confirms the
+diagnosis. **Shipped: `s7m=0.85` (s470–560) + `acm=0.90`** — the S7 margin fixes the wide-running
+root, the ACM protects S9, and both are *independent of the vtrim state*, so they hold regardless
+of what the learned map does.
+
+**Methodology lesson (important):** any A/B over a system with an online self-learning component
+must control that component (freeze it, or let each arm reach its own equilibrium). Short-soak
+A/B with live learning is unreliable — this confound fully explained the earlier nonmonotonic
+chaos, and it applies to future tuning too.
+
+---
+
+*(Original S9 narrative kept below for the record — read "inside" as "wide/outside" throughout.)*
 
 ---
 

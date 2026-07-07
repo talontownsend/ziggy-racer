@@ -736,6 +736,9 @@ def main() -> int:
     cg_geo_on = 0.0    # #5-geo generalizable grip-margin (value = target_v scale where cg_geo_mask; SHIP form)
     ha_on = 0.0        # #6 hold-the-arc: steer slew-rate scale on the light crest (e.g. 0.3)
     lb_on = 0.0        # #7 outward line-bias at S9 entry (value = metres, e.g. 1.0)
+    s7m_on = 0.0       # S7-APPROACH MARGIN (07-06): value = target_v scale in [s7m_lo, s7m_hi];
+    s7m_lo = 470.0     #   slows the car before/into the S7 crest so it stops understeering WIDE
+    s7m_hi = 560.0     #   (the ROOT cause; the S9 margin is only a downstream patch). 0 = off.
     acm_on = 0.0       # ADAPTIVE CREST MARGIN (the generalizable ship fix): value = target_v scale
                        # (e.g. 0.90) applied in a tripped hazard core's approach; 0 = off
     vtrim_hold_geo = 0.0  # generalizable SHIP path: freeze vtrim RE-EARN inside cg_geo_mask so
@@ -924,6 +927,9 @@ def main() -> int:
                     cg_geo_on = float(_t.get("cg_geo_on", cg_geo_on))
                     ha_on = float(_t.get("ha_on", ha_on))
                     lb_on = float(_t.get("lb_on", lb_on))
+                    s7m_on = float(_t.get("s7m_on", s7m_on))
+                    s7m_lo = float(_t.get("s7m_lo", s7m_lo))
+                    s7m_hi = float(_t.get("s7m_hi", s7m_hi))
                     acm_on = float(_t.get("acm_on", acm_on))
                     vtrim_hold_geo = float(_t.get("vtrim_hold_geo", vtrim_hold_geo))
                     vtrim_on = float(_t.get("vtrim_on", vtrim_on))
@@ -1285,6 +1291,8 @@ def main() -> int:
             # (already-maxed) outward correction has grip to un-inside before the s704 grip-return.
             if cg_on > 0.0 and 600.0 <= s_of[i0] <= 680.0:
                 target_v = min(target_v, target_v * cg_on)
+            if s7m_on > 0.0 and s7m_lo <= s_of[i0] <= s7m_hi:   # S7-approach margin (root-cause test)
+                target_v = min(target_v, target_v * s7m_on)
             if cg_geo_on > 0.0 and cg_geo_mask[i0]:      # generalizable (survey-derived) form
                 target_v = min(target_v, target_v * cg_geo_on)
             # ADAPTIVE CREST MARGIN: margin only in the approach of a hazard core the car has
