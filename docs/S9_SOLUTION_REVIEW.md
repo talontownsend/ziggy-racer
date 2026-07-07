@@ -8,6 +8,35 @@ detail below, open items at the bottom.
 
 ---
 
+## ⚠️ CORRECTION (2026-07-06): the mechanism was diagnosed with a flipped sign
+
+A later geometric check (using the car's actual x,z positions against the reference-line
+geometry, independent of the logged cross-track signal) overturned the *direction* of the
+diagnosis below. The signed-offset convention used throughout the original analysis was
+**inverted** — verified at `corr = -0.999` against ground-truth geometry.
+
+**The corrected mechanism:** through the S7 crest (an off-camber crest) the car does **not**
+run too far *inside* — it runs **~4.5 m WIDE (outside)** the racing line (classic understeer:
+too fast for the low grip of an off-camber crest), then hauls the wheel back toward the line,
+and *that* recovery — arriving at the S9 crest — is what lets go. So **S7 wide-running is the
+root cause, and the S9 slide is downstream of it.**
+
+![Ziggy runs ~4.5 m wide through the S7 crest](media/s7_wide_offset.png)
+
+*Geometry-verified lateral offset through S7→S8→S9: below the line = wide/outside. The car is
+wide the whole way, deepest (~4.5 m) at the S7 crest. The one spike to +inside at s636 is only
+the laps that actually slide.*
+
+**What still holds:** the empirical fix (a grip margin that slows the crest approach) works
+because slowing an understeering car reduces how wide it runs — the *physics* is unchanged, only
+the mechanism's *direction* was mislabeled. But it re-frames the shipped S9 grip margin as a
+**downstream patch**, not the cure: it sits at the S9 approach, downstream of where the car
+actually goes wrong (the S7 crest). The proper fix targets S7 itself. That work is in progress
+(see the S7 experiments) — this document's original S9 narrative is kept below for the record,
+but read "inside" as "wide/outside" throughout.
+
+---
+
 ## TL;DR
 
 - **The problem was correctly diagnosed as *steering-authority exhaustion*, not a grip
