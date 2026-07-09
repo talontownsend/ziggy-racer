@@ -17,10 +17,25 @@ Goal (user): keep diagnosing/changing/testing/validating to push S6–S10 (and o
 - **N4 (eps-release v3): S11 FIXED (−1.6) + best lap of night 29.23**, but hairpin tail crept back (4 stalls, +14.3 med) — eps-release narrowed anticipation at the hairpin. Structure now correct; magnitude needs one notch.
 - **N5 (bla_tau 0.4→0.55, running):** more anticipation, safe now that eps-release prevents undershoot elsewhere. Success = overshoot <+13/stalls ~0/S11 ~0/laps ≤30.1 → then lock into watchdog addKeys + long soak.
 
-## Pending / next
-- Validate N3 (overshoot, stalls, S11 arrival ≈ 0, laps vs 30.11 med). If good: add `bla_tau=0.4` to watchdog addKeys (persistence across restarts!) + long soak.
-- Then: consistency sweep of remaining off-track bands (s0-150, s925-950); lap-time tracking toward < 29.87.
-- Morning: full report; offer GitHub push of night's commits (local commits only overnight).
+- **N5 (bla_tau=0.55): KEEPER, locked.** Overshoot +8.8 med / +20.5 p90 (from +20.3/+29.8); S11 arrival −2.6 (≈0); deduped hairpin wedges 1/21min (N4: 2/16min); final ~16 min of window: zero stall events track-wide. Locked into watchdog addKeys; committed locally (b929dc8).
+- Secondary stall sites s225/s950 are NOT overshoot-driven (run −14/−40 BELOW target) — different mechanism (tracking/recovery), documented as future work, not chased tonight.
+- **Long soak (90 min) running** — restart-aware stats: lap med/best/p25, complex time, deduped stall rate, top off-track bands.
+
+## Cycle 2 — consistency equilibrium [second half of night]
+- 90-min soak post-N5: pace present (best 30.44) but med ~33 — INCIDENT-RATE problem: ~8 deduped stall episodes/90 min at s230/s425/s950. s950 diagnosis: NOT hot-arrival (speeds ≤ pre-change); the re-earned map lets the fast tail of laps reach target at a tracking-fragile corner → ~5% of fast attempts off → vtrim oscillates (re-earn↔cut).
+- **Consistency bias applied (00:50): vtrim_up 0.0005→0.0002, vtrim_cut 0.02→0.03** (repeat-incident sites ratchet down instead of oscillating; converged-at-ceiling zones unaffected). Snapshot first: vtrim_delta_preConsistBias_0709.npz. Persisted in watchdog addKeys.
+- Checkpoint 1 (~03:00) looked degraded but was an ANALYTICS artifact (cumulative window double-counting). Fresh-window trend showed hairpin off-rate 10.5%→9.0%→5.9% by thirds = bias converging.
+- **Checkpoint 2 (05:15, fresh 2 h): CONVERGED. 50 laps, med 30.43 / best 29.90 / p25 30.20, ZERO stall episodes, off rows s425 6353→513, s950→118.** vs deployed-ship reference 32.13 med: **−1.7 s median, stall-free.**
+- Note: s415 "overshoot vs target" is no longer comparable across configs (the carved map lowers the target); judge by outcomes (stalls/offs/laps).
+
+- **Final checkpoint (06:50, fresh 90 min): med 30.23 / best 29.69 / p25 30.01 / p75 30.43 — ZERO stalls again.** 3.5 h straight incident-free; distribution spread p25-p75 just 0.42 s; still trending down.
+
+## Night summary (for morning report)
+- Shipped + validated: **mbc** (map-boost cap replacing s7m/acm margins), **bla_tau=0.55** (brake-onset anticipation), **hul 515-565** (scoped stable-line pursuit), **consistency bias** (vtrim_up 0.0002/cut 0.03). All in watchdog addKeys; code committed locally b929dc8.
+- Fastest observed: best lap 29.23 (N4 window), complex best 11.43 s, S10 exit ~156 km/h (was 128).
+- Converged overnight state: med ~30.4, p25 ~30.2, zero stalls/2 h (ship reference was 32.13 med with regular resets).
+- Open items: s225/s950 tracking-class wedges (rare now; below-target mechanism, future work); BC policy remains the ceiling for the human +40 km/h technique gap.
+- GitHub: local commit only — offer push in the morning.
 
 ## Config keys reference (current arm)
 mbc_on=1.0 (a 470-608, b 638-702), s7m_on=0, acm_on=0, hul 515-565, bla_tau=0.4, vtrim learning on, vt2_on=0, brk_ff=1.0.
