@@ -401,6 +401,55 @@ def main() -> int:
             print(f"vtrim: save failed ({e}); will retry", flush=True)
             return False
 
+    # ============ vtrim2: LINE-ADHERENCE DIAGNOSTIC INSTRUMENT (throwaway, 07-07) ============
+    # A SECOND, independent speed-multiplier map at 25 cm resolution over the S6->S10 aperture,
+    # learned PURELY from how closely the car holds the RACING LINE (not grip). Purpose is
+    # DIAGNOSIS, not shipping: the converged map2 -- and map2 - map1 -- reveals per station the
+    # speed the car needs to stick to the line, quantifying the understeer-wide problem and
+    # separating SPEED problems (map2 < 1) from TRACKING problems (map2 can't fix it) from
+    # BANK-LOW (map2 > 1). It GOVERNS the cap inside the aperture (REPLACES map1 there, not
+    # min -- so it can explore ABOVE map1 too) and learns against a FROZEN map1.
+    # Sign: uses VERIFIED geometry (off_left x turn_sign, corr +1.0 vs truth) -- NOT _erri /
+    # cte*sign(kappa), which is BACKWARDS here (corr -1.0 at S7 crest, verified 07-07).
+    VT2_PATH = os.path.join(_rec_dir, "vtrim2_map.npz")
+    vt2_s_lo, vt2_s_hi = 430.4, 782.9      # aperture arc-length: ~25 m before S6 -> end of S10
+    vt2_cell_m = 0.25                       # 25 cm cells (~telemetry sampling floor; smooth in post)
+    vt2_ncell = int((vt2_s_hi - vt2_s_lo) / vt2_cell_m) + 1
+    vt2_map = np.ones(vt2_ncell)            # per-cell multiplier; 1.0 = plain v_curve (neutral prior)
+    # verified inside/wide geometry (+ inside toward apex, - wide/outside)
+    _t2 = np.roll(line, -1, 0) - line
+    _t2 = _t2 / (np.hypot(_t2[:, 0], _t2[:, 1])[:, None] + 1e-9)
+    vt2_lnorm = np.stack([-_t2[:, 1], _t2[:, 0]], 1)                          # left normal
+    _tn2 = np.roll(_t2, -3, 0)
+    vt2_turn_sign = np.sign(_t2[:, 0] * _tn2[:, 1] - _t2[:, 1] * _tn2[:, 0])  # >0 left turn
+    try:
+        with np.load(VT2_PATH) as _f2:
+            _m2 = _f2["map"].astype(float)
+        if len(_m2) == vt2_ncell:
+            vt2_map = _m2
+            print(f"vtrim2: loaded {vt2_ncell}-cell line map (min {vt2_map.min():.2f} "
+                  f"max {vt2_map.max():.2f})")
+        else:
+            print(f"vtrim2: saved map size {len(_m2)} != {vt2_ncell}; fresh map")
+    except Exception:
+        print(f"vtrim2: fresh {vt2_ncell}-cell map over s{vt2_s_lo:.0f}-{vt2_s_hi:.0f} @ 25 cm")
+    vt2_dirty = 0
+
+    def _vt2_cell(sm):
+        if sm < vt2_s_lo or sm > vt2_s_hi:
+            return -1
+        return int((sm - vt2_s_lo) / vt2_cell_m)
+
+    def save_vt2():
+        try:
+            tmp = VT2_PATH + ".tmp.npz"
+            np.savez(tmp, map=vt2_map, s_lo=vt2_s_lo, s_hi=vt2_s_hi, cell_m=vt2_cell_m)
+            os.replace(tmp, VT2_PATH)
+            return True
+        except Exception as e:
+            print(f"vtrim2: save failed ({e}); will retry", flush=True)
+            return False
+
     from local_planner import LocalPlanner
     planner = None if args.no_planner else LocalPlanner(line, a_lat=args.planner_alat)
     planner_alat = args.planner_alat        # hot-reloadable (base corner-grip / merge feasibility)
@@ -456,6 +505,10 @@ def main() -> int:
     cte_soft, cte_hard = args.cte_soft, args.cte_hard
     ff_use_line = 0.0                        # 1.0 = FF reads stable line curvature (anti-hunt)
     head_use_line = 0.0                       # 1.0 = pursuit aims at stable line point (anti-hunt)
+    hul_lo = 0.0                              # section-scoped head_use_line: force stable-line pursuit
+    hul_hi = 0.0                              # only in arc-length [hul_lo, hul_hi] (0,0 = disabled).
+    #                                           Global head_use_line=1 helps the S7 entry but off-tracks
+    #                                           the s400-450 hairpin approach -> scope it to S6-exit/S7-entry.
     try:
         json.dump({"safety": safety, "speed_cap": speed_cap, "max_throttle": max_throttle,
                    "ld_base": ld_base, "ld_k": ld_k, "ld_min": ld_min,
@@ -624,7 +677,8 @@ def main() -> int:
                    "psi_deg", "km_max", "kap_car", "vcurve_kmh", "thr_cap", "yawrate",
                    "meas_latg", "drive_slip", "alat_max_g", "fc_frac",
                    "r_des", "r_meas", "e_r", "over", "under", "race_pos",
-                   "y", "pitch_deg", "roll_deg"])   # appended: surface survey channels
+                   "y", "pitch_deg", "roll_deg",
+                   "vt2_mult", "vt2_inside"])   # appended: surface survey + vtrim2 diagnostic channels
 
     def neutral():
         gp.left_joystick_float(x_value_float=0.0, y_value_float=0.0)
@@ -723,6 +777,11 @@ def main() -> int:
     race_t_last = 0.0; racing_seen = time.time(); last_recover = 0.0; last_map_check = 0.0
     no_telem_t0 = None; last_blind_kick = 0.0      # no-telemetry streak / last-resort kick
     prev_tgt = None; desc_f = 0.0; brk_ff = 1.0   # brake feedforward (gain tunable; 0 disables)
+    bla_tau = 0.0      # BRAKE LOOKAHEAD (s): engage/scale braking against the target extrapolated
+                       # bla_tau seconds ahead (err_b = err - desc_f*tau). Fixes the systematic
+                       # brake-ONSET lag (+20 km/h at the hairpin turn-in): the reactive branch only
+                       # brakes once tgt<spd, so the profile's steepest descent lands at turn-in where
+                       # the slip-guard forbids braking. Human: hard early, done before turn-in. 0=off.
     thr_i = 0.0; ki_thr = 0.5                     # throttle integral (standing-pedal supply)
     rejoin_kmin = 0.004; rejoin_gain = 2.0        # coast-lock fix: straight-line rejoin floor
     scap_on = 1.0                                 # surface-frame physics cap (survey sheet)
@@ -741,6 +800,11 @@ def main() -> int:
     s7m_hi = 560.0     #   (the ROOT cause; the S9 margin is only a downstream patch). 0 = off.
     acm_on = 0.0       # ADAPTIVE CREST MARGIN (the generalizable ship fix): value = target_v scale
                        # (e.g. 0.90) applied in a tripped hazard core's approach; 0 = off
+    mbc_on = 0.0       # MAP-BOOST CAP (candidate replacement for s7m/acm, 07-08): inside the two
+    mbc_a_lo = 470.0   # hazard spans, cap the learned map's boost at this value (e.g. 1.0 = raw
+    mbc_a_hi = 608.0   # v_curve allowed, map boost blocked). Rationale: the historical crashes came
+    mbc_b_lo = 638.0   # from map1 boosting the crest zones ~1.4x v_curve; raw 1.0x was proven safe
+    mbc_b_hi = 702.0   # (capstone 13 laps, 100%% on-track, margins off). 0 = off.
     vtrim_hold_geo = 0.0  # generalizable SHIP path: freeze vtrim RE-EARN inside cg_geo_mask so
                           # incident-cuts STICK there -> the car self-selects which crest-turns are
                           # dangerous FROM ITS OWN SLIDES (S9 accrues cuts, S7 never slides -> stays free)
@@ -763,6 +827,22 @@ def main() -> int:
     acm_dirty = False                             # unsaved adaptive-crest-margin hits pending
     vtrim_penalized = set()                       # stations already incident-cut this lap
     vtrim_lap = -1                                # lap tracker for the once-per-lap cut set
+    # --- vtrim2: line-adherence DIAGNOSTIC instrument (throwaway; measures the speed the car
+    #     needs to hold the racing line, per 25 cm cell, over S6->S10). See init block above. ---
+    vt2_on = 0.0        # 0 = off (hot-key on for the diagnostic soak)
+    vt2_up = 0.004      # per-tick raise where running INSIDE beyond band (bank-low / too timid)
+    vt2_dn = 0.004      # per-tick cut where understeer-WIDE beyond band (the understeer diagnosis)
+    vt2_band = 1.0      # line-offset deadband (m): within +-band = "holds the line", no change
+    vt2_steer_sat = 0.9 # |steer| above this = grip-limited understeer (the reliable wide-slow gate)
+    vt2_clip_lo = 0.45  # much wider than map1 [0.80,1.55]: UNCENSOR the understeer readout
+    vt2_clip_hi = 1.70  # capped up-top: over-speed crashes corrupt the very line signal we measure
+    vt2_reset = 0.0     # hot: set to a NEW nonzero value -> reset map2 to 1.0 everywhere
+    # A/B override: pin the map2 GOVERNING value to vt2_pin_val over [vt2_pin_lo, vt2_pin_hi]
+    # (non-destructive: the learned map underneath is untouched; freeze learning via vt2_up/dn=0).
+    # 0 = off. Lets us test "flatten this band to X" without editing the npz or relaunching.
+    vt2_pin_lo = 0.0
+    vt2_pin_hi = 0.0
+    vt2_pin_val = 0.0
     stuck_off_since = 0.0; last_reset = 0.0      # off-track wedge -> Reset Car Position
     stuck_slow_since = 0.0                        # launched but crawling ANYWHERE -> Reset Car Position
     freeroam_since = 0.0                          # MOVING off-corridor a while -> free roam? recover
@@ -913,6 +993,7 @@ def main() -> int:
                     corner_gutil = float(_t.get("corner_gutil", corner_gutil))
                     corner_fcgate = float(_t.get("corner_fcgate", corner_fcgate))
                     brk_ff = float(_t.get("brk_ff", brk_ff))
+                    bla_tau = float(_t.get("bla_tau", bla_tau))
                     ki_thr = float(_t.get("ki_thr", ki_thr))
                     rejoin_kmin = float(_t.get("rejoin_kmin", rejoin_kmin))
                     rejoin_gain = float(_t.get("rejoin_gain", rejoin_gain))
@@ -931,6 +1012,11 @@ def main() -> int:
                     s7m_lo = float(_t.get("s7m_lo", s7m_lo))
                     s7m_hi = float(_t.get("s7m_hi", s7m_hi))
                     acm_on = float(_t.get("acm_on", acm_on))
+                    mbc_on = float(_t.get("mbc_on", mbc_on))
+                    mbc_a_lo = float(_t.get("mbc_a_lo", mbc_a_lo))
+                    mbc_a_hi = float(_t.get("mbc_a_hi", mbc_a_hi))
+                    mbc_b_lo = float(_t.get("mbc_b_lo", mbc_b_lo))
+                    mbc_b_hi = float(_t.get("mbc_b_hi", mbc_b_hi))
                     vtrim_hold_geo = float(_t.get("vtrim_hold_geo", vtrim_hold_geo))
                     vtrim_on = float(_t.get("vtrim_on", vtrim_on))
                     vtrim_up = float(_t.get("vtrim_up", vtrim_up))
@@ -948,8 +1034,26 @@ def main() -> int:
                         save_vtrim()
                         print("vtrim: delta RESET to 0 (tune trigger; net retained)")
                     vtrim_reset = _vr
+                    vt2_on = float(_t.get("vt2_on", vt2_on))
+                    vt2_up = float(_t.get("vt2_up", vt2_up))
+                    vt2_dn = float(_t.get("vt2_dn", vt2_dn))
+                    vt2_band = float(_t.get("vt2_band", vt2_band))
+                    vt2_steer_sat = float(_t.get("vt2_steer_sat", vt2_steer_sat))
+                    vt2_clip_lo = float(_t.get("vt2_clip_lo", vt2_clip_lo))
+                    vt2_clip_hi = float(_t.get("vt2_clip_hi", vt2_clip_hi))
+                    _v2r = float(_t.get("vt2_reset", vt2_reset))
+                    if _v2r != vt2_reset and _v2r != 0.0:
+                        vt2_map[:] = 1.0
+                        save_vt2()
+                        print("vtrim2: map RESET to 1.0 (tune trigger)")
+                    vt2_reset = _v2r
+                    vt2_pin_lo = float(_t.get("vt2_pin_lo", vt2_pin_lo))
+                    vt2_pin_hi = float(_t.get("vt2_pin_hi", vt2_pin_hi))
+                    vt2_pin_val = float(_t.get("vt2_pin_val", vt2_pin_val))
                     ff_use_line = float(_t.get("ff_use_line", ff_use_line))
                     head_use_line = float(_t.get("head_use_line", head_use_line))
+                    hul_lo = float(_t.get("hul_lo", hul_lo))
+                    hul_hi = float(_t.get("hul_hi", hul_hi))
                     # planner internals (momentum + rejoin geometry + kink de-spike) live-tunable
                     if planner is not None:
                         planner.w_speed   = float(_t.get("w_speed",   planner.w_speed))
@@ -1028,10 +1132,11 @@ def main() -> int:
             _fast = spd * 3.6 > 30.0
             oversteer = _fast and r_des != 0.0 and (r_meas_f * r_des > 0.0) and (abs(r_meas_f) > abs(r_des) + r_thr)
             understeer = _fast and abs(r_des) > 0.06 and (abs(r_meas_f) < understeer_thr * abs(r_des))
-            if pl is not None and head_use_line < 0.5:
+            _head_line = head_use_line >= 0.5 or (hul_hi > hul_lo and hul_lo <= s_of[i0] <= hul_hi)
+            if pl is not None and not _head_line:
                 tx, ty = planner.lookahead_target(pl, ld)      # merge lookahead point (wobbles)
             else:
-                # head_use_line (or no planner): aim the pursuit at a STABLE point on the LINE
+                # head_use_line (global or hul zone, or no planner): aim pursuit at a STABLE LINE point
                 # ld ahead, so the heading term doesn't wobble with the per-tick merge shape.
                 # Bearing to a line point ahead still pulls an off-line car toward the line.
                 d_acc, i = 0.0, i0
@@ -1057,8 +1162,20 @@ def main() -> int:
             # --- chain-fix candidate common signals (all no-ops when their keys are 0) ---
             _sm = s_of[i0]
             _ksgn = 1.0 if kappa_signed[i0] >= 0 else -1.0
-            _erri = cte * _ksgn                        # >0 = car INSIDE the turn
+            _erri = cte * _ksgn      # WARNING: BACKWARDS vs geometry (corr -1.0) -- >0 is WIDE, not inside
             _lp_now = 1.0 + float(scap_zpp[i0]) * spd * spd / 9.81
+
+            # vtrim2 diagnostic: cell index + VERIFIED inside/wide (corr +1.0 vs geometry;
+            # + = inside/toward apex, - = wide/outside). Computed once per frame for the apply,
+            # learning, and log paths below. Does NOT use _erri (backwards, see above).
+            vt2_c2 = _vt2_cell(_sm) if vt2_on > 0.0 else -1
+            vt2_inside = 0.0
+            if vt2_c2 >= 0:
+                _offl2 = (x - line[i0, 0]) * vt2_lnorm[i0, 0] + (z - line[i0, 1]) * vt2_lnorm[i0, 1]
+                vt2_inside = _offl2 * vt2_turn_sign[i0]
+            vt2_mult = float(vt2_map[vt2_c2]) if vt2_c2 >= 0 else 1.0
+            if vt2_c2 >= 0 and vt2_pin_val > 0.0 and vt2_pin_lo <= _sm <= vt2_pin_hi:
+                vt2_mult = vt2_pin_val   # log the governing (pinned) value during A/B
             _turn = abs(kappa_signed[i0]) > 0.008
             # #7 outward line-bias at S9 entry: the control cross-track targets a line lb_on m
             # WIDER (erri_ctrl = erri + lb_on -> the P term settles the car lb_on m outside).
@@ -1260,6 +1377,19 @@ def main() -> int:
                         if vtrim_map[_j] < map_w:
                             map_w = float(vtrim_map[_j])
                         _d += seg[_j]; _j = (_j + 1) % n
+                # vtrim2 GOVERNS inside its aperture: window-min of the 25 cm cells over the next
+                # 18 m REPLACES map1's map_w, so the instrument explores both directions uncensored.
+                if vt2_c2 >= 0:
+                    _ce2 = min(vt2_c2 + int(18.0 / vt2_cell_m), vt2_ncell - 1)
+                    _win = vt2_map[vt2_c2:_ce2 + 1]
+                    if vt2_pin_val > 0.0:
+                        # A/B: override cells inside the pin band with vt2_pin_val (non-destructive)
+                        _ws = vt2_s_lo + (np.arange(vt2_c2, _ce2 + 1) + 0.5) * vt2_cell_m
+                        _win = np.where((_ws >= vt2_pin_lo) & (_ws <= vt2_pin_hi), vt2_pin_val, _win)
+                    map_w = float(_win.min())
+                # MAP-BOOST CAP: in the hazard spans, block the map's >mbc boost (raw curve stays)
+                if mbc_on > 0.0 and (mbc_a_lo <= s_of[i0] <= mbc_a_hi or mbc_b_lo <= s_of[i0] <= mbc_b_hi):
+                    map_w = min(map_w, mbc_on)
                 sfac = float(surface_fac[i0]) if scap_on > 0.0 else 1.0
                 target_v = min(target_v, v_curve * map_w * min(v_curve_trim, 1.0) * sfac)
                 if plan_degraded:
@@ -1368,7 +1498,18 @@ def main() -> int:
                 desc = max(0.0, (prev_tgt - target_v) / dt)         # target descent (m/s^2)
             desc_f += 0.3 * (min(desc, 26.0) - desc_f)              # low-pass, clip spikes
             prev_tgt = target_v
-            if err >= 0:
+            # BRAKE-ONSET ANTICIPATION: enter the brake branch when the target extrapolated
+            # bla_tau seconds ahead is already below the car (err_b<0, real descent only),
+            # so braking STARTS early -- but pressure remains FF (tracks the descent rate)
+            # + P on the PLAIN error, and release is at the plain target. v1 that also aimed
+            # P/release at the extrapolated target over-braked every zone by desc*tau
+            # (S11 arrival -25.6 km/h): anticipate the ONSET, never move the SETPOINT.
+            # v3: early-onset must stop applying once the car is meaningfully BELOW target
+            # (err > +1 m/s), else the ff pedal rides the whole descent and undershoots by
+            # desc*tau anyway (v2 measured S11 arrival -24 km/h). Brake branch = real deficit,
+            # OR anticipation while still within ~1 m/s of the target from below.
+            err_b = err - desc_f * bla_tau if (bla_tau > 0.0 and desc_f > 3.0) else err
+            if err >= 0 and (err_b >= 0 or err > 1.0):
                 # THROTTLE INTEGRAL (exit-starvation fix a): pure-P needs 9 km/h of standing
                 # error for full pedal, so the pedal melts as the car approaches target --
                 # measured +2-4 km/h permanent error lap-wide (S9 control zone: 100% of ticks
@@ -1395,7 +1536,7 @@ def main() -> int:
                 _th_hold = 0.0                                      # reset the hold latch off-throttle
                 thr_i *= 0.90                                       # bleed the integral fast
                 ff = brk_ff * (desc_f / 30.0)
-                brake = min(ff + args.kp_brk * -err, brake_cap) * brake_slip_frac
+                brake = min(ff + args.kp_brk * max(0.0, -err), brake_cap) * brake_slip_frac
 
             # --- SLIP-INDUCTION (point #1): trail-brake to ROTATE the car when the front
             # steering is SATURATED in a tight corner but it still understeers (won't turn
@@ -1544,6 +1685,35 @@ def main() -> int:
                         vtrim_dirty = 0
                 if acm_dirty and frames % 512 == 0:
                     save_acm(); acm_dirty = False
+
+            # ============ vtrim2 LINE-ADHERENCE learning (diagnostic instrument) ============
+            # Two-sided deadband on VERIFIED geometry (vt2_inside: + inside, - wide). SLOW when WIDE
+            # beyond band AND grip-limited -- gated on STEERING SATURATION (|steer| > vt2_steer_sat)
+            # OR the understeer flag. (Empirically the `under` flag ALONE starves the signal: it needs
+            # planned yaw r_des high, but when the car washes out the merge path flattens -> r_des drops
+            # -> `under` is only ~4% at the -4.5 m S7 apex while |steer|>0.9 is ~100% there. Steering
+            # saturation IS the definition of grip-limited understeer: asking max lock, still wide.)
+            # Running INSIDE beyond band -> allow more speed (bank-low / too timid). Within +-band ->
+            # no change (readout = "slowest speed that holds the line within the band"). Writing a low
+            # value at the wide cell brakes the APPROACH via the same 18 m window-min read used at
+            # apply time; a +-0.5 m cone reflects the car's ~1 m dynamic length + speeds convergence.
+            # `steer` here is the pre-counter-steer PATH demand (right signal; spin counter-steer is
+            # blended in later). Runs against a FROZEN map1. Diagnostic only -- never a shipped path.
+            if vt2_on > 0.0 and f.race_position >= 1 and launched and vt2_c2 >= 0 and spd * 3.6 > 30.0:
+                _adj2 = 0.0
+                if vt2_inside < -vt2_band and (abs(steer) > vt2_steer_sat or understeer):
+                    _adj2 = -vt2_dn
+                elif vt2_inside > vt2_band:
+                    _adj2 = vt2_up
+                if _adj2 != 0.0:
+                    _cone = max(1, int(0.5 / vt2_cell_m))
+                    _a2 = max(0, vt2_c2 - _cone); _b2 = min(vt2_ncell - 1, vt2_c2 + _cone)
+                    np.clip(vt2_map[_a2:_b2 + 1] + _adj2, vt2_clip_lo, vt2_clip_hi,
+                            out=vt2_map[_a2:_b2 + 1])
+                    vt2_dirty += 1
+            if vt2_dirty and frames % 1024 == 0:
+                if save_vt2():
+                    vt2_dirty = 0
 
             # --- AFK off-track wedge escape: a car wedged OFF the track at ~0 speed can't
             # drive itself out (wall/ditch); the stuck-guard's hold just cycles. So after a
@@ -1764,7 +1934,8 @@ def main() -> int:
                            round(r_des, 3), round(r_meas_f, 3), round(e_r, 3),
                            int(oversteer), int(understeer), f.race_position,
                            round(f.pos_y, 2), round(math.degrees(f.pitch), 2),
-                           round(math.degrees(f.roll), 2)])
+                           round(math.degrees(f.roll), 2),
+                           round(vt2_mult, 4), round(vt2_inside, 2)])
             frames += 1
             if pathf is not None and pl is not None and frames % args.path_log_every == 0:
                 pathf.write(json.dumps({

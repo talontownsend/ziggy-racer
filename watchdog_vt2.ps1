@@ -1,14 +1,14 @@
-# FH6 follower watchdog -- restarts the follower if follow_log goes stale (a hang).
-# Conservative: 180s staleness threshold (well above ~60-90s normal OCR recovery),
-# 360s cooldown, and a hard cap of 10 restarts (then it gives up rather than thrash the game).
-# Encodes the exact relaunch procedure validated by hand on 2026-06-27.
-# Stop it: Get-CimInstance Win32_Process -Filter "name='pwsh.exe'" | ? {$_.CommandLine -like '*watchdog.ps1*'} | % {Stop-Process -Id $_.ProcessId -Force}
+# FH6 follower watchdog -- vtrim2 DIAGNOSTIC variant (throwaway experiment).
+# Identical recovery logic to watchdog.ps1, but the re-added tune keys carry the DIAGNOSTIC arm:
+# map1 FROZEN (vtrim learning rates 0), s7m/acm OFF, vtrim2 ON governing s430-783. Use this for
+# the vtrim2 line-adherence soak; use watchdog.ps1 for the shipped config.
+# Stop it: Get-CimInstance Win32_Process -Filter "name='pwsh.exe'" | ? {$_.CommandLine -like '*watchdog_vt2.ps1*'} | % {Stop-Process -Id $_.ProcessId -Force}
 $ErrorActionPreference = "SilentlyContinue"
 $root = "C:\Users\talon\FH6-AFK-Farm"
 $log  = "$root\recordings\follow_log.csv"
 $tune = "$root\recordings\tune.json"
 $py   = "C:\Users\Talon\myenv\Scripts\python.exe"
-$wlog = "$root\watchdog.log"
+$wlog = "$root\watchdog_vt2.log"
 $fargs = @("$root\follow.py","--afk","--plan","$root\recordings\refline_plan.npz",
   "--slip-brake","0.0","--understeer-gain","3.0","--kp-thr","0.4","--planner-alat","27","--planner-alat-k","0.0025",
   "--slip-target","1.05","--yaw-rate-sign","-1","--k-counter","0.3","--r-thr","0.2","--understeer-thr","0.55",
@@ -17,15 +17,18 @@ $fargs = @("$root\follow.py","--afk","--plan","$root\recordings\refline_plan.npz
   "--speed-cap","71","--beta-soft","8","--beta-hard","16","--cte-soft","5","--cte-hard","25","--lowspeed-steer-kmh","8",
   "--launch-cap-kmh","28","--launch-settle-m","70","--shift-up-rpm","7200","--shift-down-rpm","2800","--top-gear","11",
   "--duration","1000000")
+# DIAGNOSTIC arm: map1 frozen (up/dn/cut/netscale = 0), margins off (acm/s7m = 0), vtrim2 on.
 $addKeys = @{ w_speed=0.08; ff_use_line=1.0; w_merge=6.0; k_d=3.0; head_use_line=0.0; w_len=0.015;
   resid_on=0.0; corner_fcgate=0.52; corner_gutil=0.82; kappa_pct=100.0; S_max=40.0; w_hyst=1.5; w_dev=0.3;
-  bc_on=0.0; d0p_max=0.30; brk_ff=1.0; ki_thr=0.5; rejoin_kmin=0.004; rejoin_gain=2.0; scap_on=1.0; ff_loadcomp=0.85; crest_hold=0.0; vtrim_on=1.0; vtrim_up=0.0005; vtrim_dn=0.002; vtrim_cut=0.02; vtrim_gutil=0.93; vtrim_hi=1.55; vtrim_netscale=0.1; cg_on=0.0; acm_on=0.0; s7m_on=0.0; s7m_lo=470.0; s7m_hi=560.0; hul_lo=515.0; hul_hi=565.0;
-  mbc_on=1.0; mbc_a_lo=470.0; mbc_a_hi=608.0; mbc_b_lo=638.0; mbc_b_hi=702.0; bla_tau=0.55 }
+  bc_on=0.0; d0p_max=0.30; brk_ff=1.0; ki_thr=0.5; rejoin_kmin=0.004; rejoin_gain=2.0; scap_on=1.0; ff_loadcomp=0.85; crest_hold=0.0;
+  vtrim_on=1.0; vtrim_up=0.0; vtrim_dn=0.0; vtrim_cut=0.0; vtrim_gutil=0.93; vtrim_hi=1.55; vtrim_netscale=0.0;
+  cg_on=0.0; acm_on=0.0; s7m_on=0.0;
+  vt2_on=1.0; vt2_up=0.004; vt2_dn=0.004; vt2_band=1.0; vt2_steer_sat=0.9; vt2_clip_lo=0.45; vt2_clip_hi=1.70; vt2_reset=0.0 }
 function WLog($m) { "$((Get-Date).ToString('MM-dd HH:mm:ss')) $m" | Add-Content $wlog }
 
 $lastRestart = (Get-Date).AddMinutes(-10)
 $count = 0
-WLog "watchdog started (stale>180s, cooldown 360s, max 10 restarts)"
+WLog "watchdog_vt2 started (stale>180s, cooldown 360s, max 10 restarts)"
 while ($true) {
   Start-Sleep -Seconds 30
   $li = Get-Item $log
@@ -33,7 +36,7 @@ while ($true) {
   $age  = ((Get-Date) - $li.LastWriteTime).TotalSeconds
   $cool = ((Get-Date) - $lastRestart).TotalSeconds
   if ($age -gt 180 -and $cool -gt 360) {
-    if ($count -ge 30) { WLog "STALE ${age}s but hit 30-restart cap -> giving up (needs human)"; break }
+    if ($count -ge 10) { WLog "STALE ${age}s but hit 10-restart cap -> giving up (needs human)"; break }
     $count++
     WLog "STALE log ${age}s -> restart #$count"
     Copy-Item "$root\follower_stdout.log" "$root\wd_fail_stdout_$((Get-Date).ToString('HHmmss')).log" -EA SilentlyContinue
@@ -54,25 +57,7 @@ while ($true) {
     $t = Get-Content $tune -Raw | ConvertFrom-Json
     foreach ($k in $addKeys.Keys) { $t | Add-Member -NotePropertyName $k -NotePropertyValue $addKeys[$k] -Force }
     $t | ConvertTo-Json | Set-Content $tune
-    WLog "  tune keys re-added; resuming watch"
+    WLog "  tune keys re-added (vt2 diagnostic arm); resuming watch"
     $lastRestart = Get-Date
   }
 }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
