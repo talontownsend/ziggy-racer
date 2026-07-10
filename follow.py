@@ -645,6 +645,31 @@ def main() -> int:
         n_acm, ",".join("%.0f" % s_of[acm_core_start[c]] for c in range(n_acm)),
         acm_hits[:n_acm].round(1).tolist()), flush=True)
 
+    # === GENERALIZED map-boost-cap zone (mbc_geo, 07-09) ===============================
+    # Survey-derived replacement for the hand-drawn mbc_a/mbc_b spans: cap the learned map's
+    # boost inside [core_start - MBC_UP_M, hazard_end] of every survey crest-turn core
+    # (hazard region = acm_haz_of, cluster -> +40 m). Track-agnostic: any surveyed track
+    # yields its own zones; no arc-length literals. Enabled via mbc_geo (cap value, 0=off).
+    MBC_UP_M = 80.0                                   # upstream anticipation span (braking-scale)
+    # zone = [core_start - MBC_UP_M, cluster_end]: approach + the turn itself. NOT the +40 m
+    # hazard tail (that extension is for slide ATTRIBUTION) -- capping a corner EXIT starves the
+    # run onto the next straight and the deficit compounds downstream (measured -0.5 s/lap);
+    # exit overspeed is self-limiting as curvature unwinds.
+    mbc_geo_zone = np.zeros(n, dtype=bool)
+    for _c in range(n_acm):
+        _j = acm_core_start[_c]
+        while _j != (acm_core_end[_c] + 1) % n:       # the cluster (turn) itself
+            mbc_geo_zone[_j] = True; _j = (_j + 1) % n
+        _d, _j = 0.0, acm_core_start[_c]              # plus MBC_UP_M upstream of each core
+        while _d < MBC_UP_M:
+            _j = (_j - 1) % n; _d += seg[_j]
+            mbc_geo_zone[_j] = True
+    if mbc_geo_zone.any():
+        _zs = np.where(mbc_geo_zone)[0]
+        _brk = np.where(np.diff(_zs) > 1)[0]
+        _spans = np.split(_zs, _brk + 1)
+        print("mbc_geo zones: " + ", ".join(f"s{s_of[sp[0]]:.0f}-{s_of[sp[-1]]:.0f}" for sp in _spans), flush=True)
+
     def save_acm():
         try:
             _t = ACM_PATH + ".tmp.npy"
@@ -729,6 +754,7 @@ def main() -> int:
     t_prev = None          # previous loop timestamp (for the PID dt)
     cte_prev = 0.0         # previous cross-track error (for the PID derivative)
     cte_int = 0.0          # integral of cross-track error (anti-windup clamped)
+    cte = 0.0              # cross-track error; init for first-tick reads (hul_cte latch)
     cte_dot_f = 0.0        # low-passed cross-track error rate (PID derivative)
 
     # --- optional screenshot capture (telemetry-aligned, off-thread so it never
@@ -800,6 +826,12 @@ def main() -> int:
     s7m_hi = 560.0     #   (the ROOT cause; the S9 margin is only a downstream patch). 0 = off.
     acm_on = 0.0       # ADAPTIVE CREST MARGIN (the generalizable ship fix): value = target_v scale
                        # (e.g. 0.90) applied in a tripped hazard core's approach; 0 = off
+    mbc_geo = 0.0      # GENERALIZED map-boost cap: same principle as mbc_on but the zone comes from
+                       # the SURVEY (crest-turn cores +80m upstream, through hazard end) -- no track
+                       # literals. Value = cap (e.g. 1.0). Use INSTEAD of mbc_on. 0 = off.
+    hul_cte = 0.0      # GENERALIZED stable-line pursuit trigger: aim at the LINE (not the wobbling
+    _hul_latch = False # merge target) while |cte| > hul_cte m (latched, exits at 0.6x) -- the merge
+                       # target is least trustworthy when far off-line. Replaces the hul span. 0=off.
     mbc_on = 0.0       # MAP-BOOST CAP (candidate replacement for s7m/acm, 07-08): inside the two
     mbc_a_lo = 470.0   # hazard spans, cap the learned map's boost at this value (e.g. 1.0 = raw
     mbc_a_hi = 608.0   # v_curve allowed, map boost blocked). Rationale: the historical crashes came
@@ -1012,6 +1044,8 @@ def main() -> int:
                     s7m_lo = float(_t.get("s7m_lo", s7m_lo))
                     s7m_hi = float(_t.get("s7m_hi", s7m_hi))
                     acm_on = float(_t.get("acm_on", acm_on))
+                    mbc_geo = float(_t.get("mbc_geo", mbc_geo))
+                    hul_cte = float(_t.get("hul_cte", hul_cte))
                     mbc_on = float(_t.get("mbc_on", mbc_on))
                     mbc_a_lo = float(_t.get("mbc_a_lo", mbc_a_lo))
                     mbc_a_hi = float(_t.get("mbc_a_hi", mbc_a_hi))
@@ -1132,7 +1166,18 @@ def main() -> int:
             _fast = spd * 3.6 > 30.0
             oversteer = _fast and r_des != 0.0 and (r_meas_f * r_des > 0.0) and (abs(r_meas_f) > abs(r_des) + r_thr)
             understeer = _fast and abs(r_des) > 0.06 and (abs(r_meas_f) < understeer_thr * abs(r_des))
-            _head_line = head_use_line >= 0.5 or (hul_hi > hul_lo and hul_lo <= s_of[i0] <= hul_hi)
+            # generalized stable-line trigger: latched on |cte| (previous tick's value -- the aim
+            # selection runs before this tick's cte is computed; 1 tick @71Hz is immaterial)
+            if hul_cte > 0.0:
+                if _hul_latch:
+                    if abs(cte) < 0.6 * hul_cte:
+                        _hul_latch = False
+                elif abs(cte) > hul_cte:
+                    _hul_latch = True
+            else:
+                _hul_latch = False
+            _head_line = (head_use_line >= 0.5 or (hul_hi > hul_lo and hul_lo <= s_of[i0] <= hul_hi)
+                          or _hul_latch)
             if pl is not None and not _head_line:
                 tx, ty = planner.lookahead_target(pl, ld)      # merge lookahead point (wobbles)
             else:
@@ -1390,6 +1435,9 @@ def main() -> int:
                 # MAP-BOOST CAP: in the hazard spans, block the map's >mbc boost (raw curve stays)
                 if mbc_on > 0.0 and (mbc_a_lo <= s_of[i0] <= mbc_a_hi or mbc_b_lo <= s_of[i0] <= mbc_b_hi):
                     map_w = min(map_w, mbc_on)
+                # generalized form: survey-derived zone instead of literals
+                if mbc_geo > 0.0 and mbc_geo_zone[i0]:
+                    map_w = min(map_w, mbc_geo)
                 sfac = float(surface_fac[i0]) if scap_on > 0.0 else 1.0
                 target_v = min(target_v, v_curve * map_w * min(v_curve_trim, 1.0) * sfac)
                 if plan_degraded:

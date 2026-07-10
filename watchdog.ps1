@@ -19,8 +19,8 @@ $fargs = @("$root\follow.py","--afk","--plan","$root\recordings\refline_plan.npz
   "--duration","1000000")
 $addKeys = @{ w_speed=0.08; ff_use_line=1.0; w_merge=6.0; k_d=3.0; head_use_line=0.0; w_len=0.015;
   resid_on=0.0; corner_fcgate=0.52; corner_gutil=0.82; kappa_pct=100.0; S_max=40.0; w_hyst=1.5; w_dev=0.3;
-  bc_on=0.0; d0p_max=0.30; brk_ff=1.0; ki_thr=0.5; rejoin_kmin=0.004; rejoin_gain=2.0; scap_on=1.0; ff_loadcomp=0.85; crest_hold=0.0; vtrim_on=1.0; vtrim_up=0.0005; vtrim_dn=0.002; vtrim_cut=0.02; vtrim_gutil=0.93; vtrim_hi=1.55; vtrim_netscale=0.1; cg_on=0.0; acm_on=0.0; s7m_on=0.0; s7m_lo=470.0; s7m_hi=560.0; hul_lo=515.0; hul_hi=565.0;
-  mbc_on=1.0; mbc_a_lo=470.0; mbc_a_hi=608.0; mbc_b_lo=638.0; mbc_b_hi=702.0; bla_tau=0.55 }
+  bc_on=0.0; d0p_max=0.30; brk_ff=1.0; ki_thr=0.5; rejoin_kmin=0.004; rejoin_gain=2.0; scap_on=1.0; ff_loadcomp=0.85; crest_hold=0.0; vtrim_on=1.0; vtrim_up=0.0005; vtrim_dn=0.002; vtrim_cut=0.03; vtrim_gutil=0.93; vtrim_hi=1.55; vtrim_netscale=0.1; cg_on=0.0; acm_on=0.0; s7m_on=0.0; s7m_lo=470.0; s7m_hi=560.0; hul_lo=515.0; hul_hi=565.0;
+  mbc_on=1.0; mbc_a_lo=470.0; mbc_a_hi=608.0; mbc_b_lo=638.0; mbc_b_hi=702.0; bla_tau=0.55; mbc_geo=0.0; hul_cte=0.0 }
 function WLog($m) { "$((Get-Date).ToString('MM-dd HH:mm:ss')) $m" | Add-Content $wlog }
 
 $lastRestart = (Get-Date).AddMinutes(-10)
