@@ -29,8 +29,9 @@ WLog "watchdog started (stale>180s, cooldown 360s, max 10 restarts)"
 while ($true) {
   Start-Sleep -Seconds 30
   $li = Get-Item $log
-  if (-not $li) { continue }
-  $age  = ((Get-Date) - $li.LastWriteTime).TotalSeconds
+  # missing log = follower never started (e.g. log was archived/renamed with no follower up):
+  # treat as maximally stale instead of skipping forever (07-13 blind spot: rename+dead follower)
+  $age  = if ($li) { ((Get-Date) - $li.LastWriteTime).TotalSeconds } else { 9999 }
   $cool = ((Get-Date) - $lastRestart).TotalSeconds
   if ($age -gt 180 -and $cool -gt 360) {
     if ($count -ge 30) { WLog "STALE ${age}s but hit 30-restart cap -> giving up (needs human)"; break }

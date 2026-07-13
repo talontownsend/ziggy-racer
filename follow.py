@@ -474,14 +474,23 @@ def main() -> int:
     except Exception:
         print(f"residual net: no weights yet (zero=no-op); will hot-load {RESID_PATH}")
 
-    # SFT POLICY (behavioral-cloned from the human's laps): when bc_on=1 in tune.json it DRIVES
-    # (full control: steer/thr/brk = net output) during normal racing; base recovery still handles
-    # off-track/reset/relaunch. The 35 line-invariant features + numpy forward come from
-    # track_features (same code as build_bc_dataset.py -> no feature mismatch). Hot-loads bc_policy.npz.
-    # Default OFF, and bc_on is NOT in the startup args/watchdog keys -> any restart reverts to base (safe).
+    # BC STEER-ONLY BLEND (07-13, replaces the old full/residual SFT path): when armed
+    # (bc_on>0.5 and bc_w>0), the cloned policy's STEER head is blended into the base
+    # steering law UPSTREAM of all safety overrides (counter-steer, slew, sideslip, clamps),
+    # bounded by a hard delta clamp bc_cap. Throttle/brake heads are NEVER actuated -- the
+    # proven longitudinal stack stays authoritative. bc_shadow=1 computes+logs the policy
+    # steer with ZERO actuation (validation mode). Features/forward come from track_features
+    # (same code as the dataset builder -> no mismatch). Hot-loads bc_policy.npz on mtime.
+    # Watchdog re-writes bc_on=0.0 on every restart = dead-man disarm (intended).
     from track_features import sft_features, bc_forward, load_bc_policy, cumlen as _cumlen, boundary_preview3d
     BC_PATH = r"C:\Users\talon\FH6-AFK-Farm\recordings\bc_policy.npz"
     bc_on = 0.0
+    bc_w = 0.0          # blend weight toward the policy steer (0=off)
+    bc_gain = 1.0       # policy-steer gain (offsets measured ~0.77x commitment attenuation)
+    bc_cap = 0.15       # HARD bound on injected steer delta per tick (historically safe)
+    bc_lo = 0.0         # arc-length scope (both 0 = whole lap), same units as hul/mbc keys
+    bc_hi = 0.0
+    bc_shadow = 0.0     # 1 = compute+log bc_st every eligible tick, never actuate
     bc_clen = _cumlen(line)
     bc_policy = None
     bc_mtime = 0.0
@@ -703,7 +712,8 @@ def main() -> int:
                    "meas_latg", "drive_slip", "alat_max_g", "fc_frac",
                    "r_des", "r_meas", "e_r", "over", "under", "race_pos",
                    "y", "pitch_deg", "roll_deg",
-                   "vt2_mult", "vt2_inside"])   # appended: surface survey + vtrim2 diagnostic channels
+                   "vt2_mult", "vt2_inside",
+                   "bc_st", "bc_dst", "bc_w_eff"])   # appended: vtrim2 + BC-blend channels
 
     def neutral():
         gp.left_joystick_float(x_value_float=0.0, y_value_float=0.0)
@@ -879,6 +889,7 @@ def main() -> int:
     stuck_slow_since = 0.0                        # launched but crawling ANYWHERE -> Reset Car Position
     freeroam_since = 0.0                          # MOVING off-corridor a while -> free roam? recover
     reversing = False; reverse_until = 0.0; reverse_from = None   # REVERSE-unstuck maneuver
+    on_track = False       # init for first-tick reads (bc blend gate reads prev frame's value)
     reverse_attempts = 0; wedge_ref = None; wedge_ref_t = 0.0; ok_since = 0.0
     v_curve_trim = 1.0                            # closed-loop corner-speed trim (realized-g feedback)
     corner_gutil = 0.80                           # trim target: creep corner speed up until this frac of grip
@@ -1101,6 +1112,12 @@ def main() -> int:
                         planner.d0p_max   = float(_t.get("d0p_max",   planner.d0p_max))
                     resid_on = float(_t.get("resid_on", resid_on))
                     bc_on = float(_t.get("bc_on", bc_on))
+                    bc_w = float(_t.get("bc_w", bc_w))
+                    bc_gain = float(_t.get("bc_gain", bc_gain))
+                    bc_cap = float(_t.get("bc_cap", bc_cap))
+                    bc_lo = float(_t.get("bc_lo", bc_lo))
+                    bc_hi = float(_t.get("bc_hi", bc_hi))
+                    bc_shadow = float(_t.get("bc_shadow", bc_shadow))
                 except Exception:
                     pass
                 try:    # hot-reload residual net weights when the trainer rewrites the file
@@ -1302,6 +1319,28 @@ def main() -> int:
             i_t = ki * cte_int
             d_t = kd * cte_dot_f * corr
             steer = STEER_SIGN * (ff + h_t + p_t + i_t + d_t)
+
+            # ===== BC STEER-ONLY BLEND (upstream of ALL safety overrides) =====
+            # Blend the cloned policy's steer into the base command here, so the oversteer
+            # counter-steer, anti-windup, slew limiter, sideslip blend, and low-speed clamp
+            # all apply ON TOP of the blended value (safety stays authoritative). Injected
+            # authority is hard-bounded by bc_cap regardless of policy disagreement.
+            bc_st_log = float("nan"); bc_dst_log = 0.0; bc_w_eff = 0.0
+            if (bc_policy is not None and spd * 3.6 > 70.0
+                    and (bc_shadow > 0.0 or (bc_on > 0.5 and bc_w > 0.0))):
+                bc_feats = sft_features(spd, f.vel_x, f.vel_y, f.vel_z, f.angvel_x, f.angvel_y, f.angvel_z,
+                                        f.pitch, f.roll, f.rpm, float(gear),
+                                        x, z, yaw_h, (i0 if i0 is not None else 0),
+                                        line, left_w, right_w, bc_clen)
+                _bst, _, _ = bc_forward(bc_policy, bc_feats)
+                bc_st_log = float(_bst)
+                if (bc_on > 0.5 and bc_w > 0.0 and on_track and not reversing
+                        and not oversteer and abs(sideslip) <= slide_deg
+                        and (bc_hi <= bc_lo or bc_lo <= s_of[i0] <= bc_hi)):
+                    _tgt = (1.0 - bc_w) * steer + bc_w * bc_gain * bc_st_log
+                    bc_dst_log = max(-bc_cap, min(bc_cap, _tgt - steer))
+                    steer = steer + bc_dst_log
+                    bc_w_eff = bc_w
             # COUNTER-STEER (point #2): when the car is OVER-rotating (rear sliding out), add a
             # yaw-rate damping term that steers to bring yaw back to commanded. dr/dsteer < 0 on
             # this rig, so +k_counter*e_r reduces excess yaw = steers INTO the slide. Only when
@@ -1937,22 +1976,9 @@ def main() -> int:
                 steer = max(-1.0, min(1.0, steer + float(d_st)))
                 throttle = max(0.0, min(1.0, throttle + float(d_th)))
                 brake = max(0.0, min(1.0, brake + float(d_br)))
-            # SFT POLICY DRIVES: when bc_on, the learned policy REPLACES the base control during normal
-            # racing (full steer/thr/brk = net output). Recovery/reverse/off-track stay on the base so
-            # the AFK loop still self-heals. yaw_h (yaw-derived heading) matches the training features.
-            if bc_on > 0.5 and bc_policy is not None and on_track and not reversing and spd * 3.6 > 70.0:
-                # SFT as a BOUNDED RESIDUAL CORRECTOR on top of the base (NOT full control): nudge the
-                # base's command toward the human's, clamped, so the BASE still drives and self-recovers
-                # (no OOD cascade). Speed-gated to where the human data is dense (racing >70 km/h).
-                bc_feats = sft_features(spd, f.vel_x, f.vel_y, f.vel_z, f.angvel_x, f.angvel_y, f.angvel_z,
-                                        f.pitch, f.roll, f.rpm, float(gear),
-                                        x, z, yaw_h, (i0 if i0 is not None else 0),
-                                        line, left_w, right_w, bc_clen)
-                bc_st, bc_th, bc_br = bc_forward(bc_policy, bc_feats)
-                B_S, B_P = 0.15, 0.20    # max correction the SFT may apply to base steer / pedals
-                steer    = max(-1.0, min(1.0, steer    + max(-B_S, min(B_S, bc_st - steer))))
-                throttle = max(0.0, min(1.0, throttle + max(-B_P, min(B_P, bc_th - throttle))))
-                brake    = max(0.0, min(1.0, brake    + max(-B_P, min(B_P, bc_br - brake))))
+            # (old downstream SFT block REMOVED 07-13: it applied after all safety overrides,
+            # bypassed the slew limiter, and nudged the pedals -- the steer-only blend now
+            # lives upstream in the steering law. See the bc block after the base steer calc.)
             gp.left_joystick_float(x_value_float=float(steer), y_value_float=0.0)
             gp.right_trigger_float(value_float=float(throttle))
             gp.left_trigger_float(value_float=float(brake))
@@ -1983,7 +2009,8 @@ def main() -> int:
                            int(oversteer), int(understeer), f.race_position,
                            round(f.pos_y, 2), round(math.degrees(f.pitch), 2),
                            round(math.degrees(f.roll), 2),
-                           round(vt2_mult, 4), round(vt2_inside, 2)])
+                           round(vt2_mult, 4), round(vt2_inside, 2),
+                           round(bc_st_log, 3), round(bc_dst_log, 3), round(bc_w_eff, 2)])
             frames += 1
             if pathf is not None and pl is not None and frames % args.path_log_every == 0:
                 pathf.write(json.dumps({
