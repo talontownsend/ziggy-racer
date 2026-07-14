@@ -746,6 +746,7 @@ def main() -> int:
 
     t0 = time.time()
     throttle = 0.0
+    brake = 0.0            # init for first-tick reads (ffm validity gate reads prev-tick brake)
     frames = 0
     prev = None            # baseline position for travel-heading
     cur_heading = None
@@ -822,6 +823,33 @@ def main() -> int:
     rejoin_kmin = 0.004; rejoin_gain = 2.0        # coast-lock fix: straight-line rejoin floor
     scap_on = 1.0                                 # surface-frame physics cap (survey sheet)
     ff_loadcomp = 0.85                            # steering-FF load compensation exponent (0=off)
+    # MEASURED STEER-FF MAP (07-13): |steer| needed to hold curvature k at speed v, fitted from
+    # the bot's OWN logged actuation (~119k clean cornering frames). The legacy linear FF
+    # (k_ff*kappa = 5.5k) supplies only ~5-10% of the measured requirement at speed -- the PID has
+    # been reactively hauling the rest, which IS the tentative-entry / mid-corner-sag mechanism.
+    # GENERALIZABLE: keyed on (kappa, v) = car+game properties, no track terms; rebuild per car
+    # from its logs. ffm_w blends legacy->map (0=legacy, 1=map). Falls back to legacy if file absent.
+    ffm_w = 0.0
+    _fm = None
+    try:
+        _fmz = np.load(os.path.join(_rec_dir, "steer_ff_map.npz"))
+        _fm = (_fmz["M"], _fmz["vc"].astype(float), _fmz["kc"].astype(float))
+        print(f"steer-FF map: loaded ({np.isfinite(_fm[0]).sum()} cells, v {_fm[1][0]:.0f}-{_fm[1][-1]:.0f} kmh)")
+    except Exception as _e:
+        print(f"steer-FF map: unavailable ({_e}) -> legacy FF only")
+
+    def ffmap_steer(kappa, v_kmh):
+        # bilinear-ish lookup: interp along v rows then along log-kappa; sign restored by caller
+        Mm, vcv, kcv = _fm
+        ak = abs(kappa)
+        if ak < kcv[0]:
+            # below the fitted range: scale the smallest-kappa column linearly toward 0
+            base = np.interp(v_kmh, vcv, Mm[:, 0])
+            return base * (ak / kcv[0])
+        iv = np.interp(v_kmh, vcv, np.arange(len(vcv)))
+        i0f = int(min(max(iv, 0), len(vcv) - 2)); fv = iv - i0f
+        row = (1 - fv) * Mm[i0f] + fv * Mm[i0f + 1]
+        return float(np.interp(np.log(min(ak, kcv[-1])), np.log(kcv), row))
     # --- chain-fix A/B candidates (2026-07-05), all default OFF; hot-reloadable ---
     aw_on = 0.0        # #1 steer-clip anti-windup: decay cte_int when the wheel saturates
     cr_on = 0.0        # #2 correction-restore: un-damp p_t in the grip-return window
@@ -1042,6 +1070,7 @@ def main() -> int:
                     rejoin_gain = float(_t.get("rejoin_gain", rejoin_gain))
                     scap_on = float(_t.get("scap_on", scap_on))
                     ff_loadcomp = float(_t.get("ff_loadcomp", ff_loadcomp))
+                    ffm_w = float(_t.get("ffm_w", ffm_w))
                     crest_hold = float(_t.get("crest_hold", crest_hold))
                     aw_on = float(_t.get("aw_on", aw_on))
                     cr_on = float(_t.get("cr_on", cr_on))
@@ -1283,8 +1312,19 @@ def main() -> int:
                 _lp = min(max(1.0 + float(scap_zpp[i0]) * spd * spd / 9.81, 0.5), 1.3)
                 _comp = min(max(_lp ** -ff_loadcomp, 0.75), 1.45)
             else:
-                _comp = 1.0
+                _comp = 1.0; _lp = 1.0
             ff  = k_ff * kappa_ff * _comp
+            if ffm_w > 0.0 and _fm is not None:
+                # measured-map FF: the stick the car actually needs for kappa_ff at this speed.
+                # VALIDITY GATE (rung-1 lesson, 33-deg slides): the map is fitted on steady FLAT
+                # NO-BRAKE cornering -- fade it out under braking (brake+map-lock rotates the
+                # truck at the hairpin) and over light crests (load<1: full map steer breaks the
+                # rear loose; legacy+comp handles those regimes). brake/_lp are prev-tick values.
+                # NO _comp on the map term (the map already encodes real flat-ground need).
+                _wl = ffm_w * max(0.0, 1.0 - 2.0 * brake) * min(max((_lp - 0.75) / 0.15, 0.0), 1.0)
+                if _wl > 0.0:
+                    _ffm = math.copysign(ffmap_steer(kappa_ff, spd * 3.6), kappa_ff)
+                    ff = (1.0 - _wl) * ff + _wl * _ffm
             # CORRECTION SCHEDULING (user's S7->S8->S9 diagnosis, 07-05): the S-oscillation
             # is choreographed by the compression-crest sequence -- (a) in COMPRESSIONS
             # (load>1) every steering term is over-effective, so line corrections OVERSHOOT
