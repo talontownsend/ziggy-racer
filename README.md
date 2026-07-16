@@ -14,7 +14,7 @@ The car is a modded X-class Toyota Tacoma; the track is **Shimanoyama Circuit**.
 |---|---|
 | **Ziggy Racer** (this controller, self-taught) | **28.36 s** |
 | Ana — Forza's built-in *Auto Drive* AI | 27.29 s |
-| Talon Townsend (human reference) | 26.10 s |
+| Talon Townsend (human reference) | 25.68 s |
 
 A ~2.3 s gap to a skilled human, closed entirely from physics and the car's own experience — and still closing, one corner at a time.
 
