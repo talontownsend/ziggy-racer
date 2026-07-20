@@ -27,7 +27,7 @@ refline rebuild (`tools/build_refline2.py`), speed targets, and the BC dataset
 (`tools/build_bc_dataset_v2.py`).
 
 ## 3. Hot-reload config (tune.json, picked up ~2.4 Hz)
-Key groups (see CONSTRAINTS.md for the rules around them):
+Key groups (testing rules for these live in METHODOLOGY.md):
 - **Steering FF:** `ffm_w` (0.15 = shipped optimum; 0=off), `ffm_gsc` (reactive-gain shed, 0.5),
   `t_ff` (FF lead time, 0.21 = includes +30ms latency compensation)
 - **Braking:** `bla_tau` (onset anticipation, 0.70), `brk_ff` (1.0 - do NOT raise; chatter)
@@ -40,7 +40,7 @@ Key groups (see CONSTRAINTS.md for the rules around them):
   `vt2_on/...` (line-adherence diagnostic), `ffm` map file hot-swaps on mtime
 - **Watchdog persistence:** any key not in watchdog.ps1 `$addKeys` reverts on restart.
 
-## 4. A/B protocol (the short version - full rules in CONSTRAINTS.md §2)
+## 4. A/B protocol (the short version - full rules in METHODOLOGY.md)
 1. Freeze vtrim (rates→0, `vtrim_on=1`) or plan for equilibrium windows.
 2. Calibrate abort thresholds on the current config (hunt baseline etc.).
 3. Arm via tune.json; put arm keys in watchdog `$addKeys` if the window must survive restarts.
@@ -54,7 +54,7 @@ Key groups (see CONSTRAINTS.md for the rules around them):
 3. **Latency: steer→yawrate cross-correlation lag** - the only probe that catches input-pipeline
    changes (07-13: +28 ms, zero physics/settings changes). Compensate via `t_ff` (+lead), never gain.
 4. Physics: speed-matched pedal-decel bins; corner-matched lateral-g percentiles. Aggregate
-   medians WILL lie (§2.5).
+   medians WILL lie (METHODOLOGY.md, rule 5).
 5. Settings: user checks in-game assists (a patch can reset them).
 6. Watch the first hour: stall sites + excursion rates vs the previous band.
 
