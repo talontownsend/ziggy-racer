@@ -1,7 +1,7 @@
 # Program Constraints
 
 The invariants every shipped change must satisfy. If a change violates one of these, it doesn't
-ship - regardless of lap time. Exceptions live in the register at the bottom, each with a
+ship, regardless of lap time. Exceptions live in the register at the bottom, each with a
 rationale and an exit path.
 
 1. **Track-agnostic control path.** No arc-length or track-position literals in shipped control
@@ -16,10 +16,10 @@ rationale and an exit path.
 
 3. **Independence from human data.** Human laps are *evaluation targets*, never *operating
    bounds*. No speed floor, steering profile, margin, or cap may be derived from human driving.
-   (Single standing exception: the reference line - see register.)
+   (Single standing exception: the reference line; see the register.)
 
-4. **Self-calibrated limits.** Every planning limit - grip envelope, steering feasibility,
-   braking capability, per-corner speed - comes from the bot's own measured telemetry and is
+4. **Self-calibrated limits.** Every planning limit (grip envelope, steering feasibility,
+   braking capability, per-corner speed) comes from the bot's own measured telemetry and is
    rebuildable per car/track by script. No hand-entered physics numbers.
 
 5. **Interpretable driving path.** The shipped control loop contains no black-box policy.
@@ -40,8 +40,8 @@ rationale and an exit path.
 
 | Exception | Violates | Rationale | Exit path |
 |---|---|---|---|
-| Reference line = human's recorded best lap | #3 | Six computed-line solvers failed (inside-hugging); the measured-constraint optimizer later confirmed the human line is near-optimal under the bot's own limits. Deliberate, user-approved. | A recorded faster human session, or a future solver win, replaces the artifact - the mechanism (line-in-a-file) is already agnostic. |
+| Reference line = human's recorded best lap | #3 | Six computed-line solvers failed (inside-hugging); the measured-constraint optimizer later confirmed the human line is near-optimal under the bot's own limits. Deliberate, user-approved. | A recorded faster human session, or a future solver win, replaces the artifact; the mechanism (line-in-a-file) is already agnostic. |
 | `mbc` cap spans (s470-608, s638-702) | #1 | The survey-derived zones (`mbc_geo`) under-protect crest exits; measured +0.75s-and-worse twice. | `mbc_geo` ships as the new-track bootstrap; a zone rule that learns exit extents from incidents would retire the literals. |
 | `hul` stable-aim span (s515-565) | #1 | The condition-based form fires during hairpin recoveries where line-aim is infeasible (measured: 9 stalls/45min). | Curvature-feasibility-gated trigger (aim at the line only where the line is reachable). |
 
-Everything else in the shipped path is mechanism-level. When adding an exception, add the row - an undocumented exception is a bug.
+Everything else in the shipped path is mechanism-level. When adding an exception, add the row. An undocumented exception is a bug.
