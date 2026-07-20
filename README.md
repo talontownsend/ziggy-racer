@@ -22,6 +22,9 @@ A ~2.3 s gap to a skilled human, closed entirely from physics and the car's own 
 
 ---
 
+> **Project docs:** [docs/CONSTRAINTS.md](docs/CONSTRAINTS.md) (design principles & operating rules) ·
+> [docs/PROJECT_MAP.md](docs/PROJECT_MAP.md) (repo layout) · [docs/OPERATIONS.md](docs/OPERATIONS.md) (runbook)
+
 ## Table of contents
 
 - [What it does](#what-it-does)
@@ -303,6 +306,12 @@ Honest limitations:
 - Own-line optimization coupling the self-learned grip map to a min-lap-time solver.
 - A precision-improving inner tracker to cash the corners the map knows are faster than it can currently execute.
 - Cross-track / cross-car transfer validation using the track-agnostic survey + vehicle-spec recipe.
+
+---
+
+> **Port-conflict note:** FH6 TC — a separate traction-control project for
+> human driving, at `C:\Users\Talon\FH6-TC` — also listens on UDP 7777.
+> Don't run it while `follow.py` is farming (and vice versa).
 
 ---
 

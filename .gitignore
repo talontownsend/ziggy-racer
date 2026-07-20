@@ -33,3 +33,9 @@ __pycache__/
 # keep curated images used by the docs/README
 !docs/media/*.png
 !docs/media/*.jpg
+
+# --- organized 07-20 ---
+logs/
+recordings/archive_logs/
+recordings/archive_data/
+recordings/snapshots/
