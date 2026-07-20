@@ -830,6 +830,7 @@ def main() -> int:
     # GENERALIZABLE: keyed on (kappa, v) = car+game properties, no track terms; rebuild per car
     # from its logs. ffm_w blends legacy->map (0=legacy, 1=map). Falls back to legacy if file absent.
     ffm_w = 0.0
+    ffm_gsc = 0.5      # reactive-gain shed fraction at full map weight (pursuit + P terms)
     _fm = None
     try:
         _fmz = np.load(os.path.join(_rec_dir, "steer_ff_map.npz"))
@@ -918,6 +919,7 @@ def main() -> int:
     freeroam_since = 0.0                          # MOVING off-corridor a while -> free roam? recover
     reversing = False; reverse_until = 0.0; reverse_from = None   # REVERSE-unstuck maneuver
     on_track = False       # init for first-tick reads (bc blend gate reads prev frame's value)
+    wedge_cut_ticks = 0; wedge_cut_done = False   # wedge-cut episode state (fires un-launched)
     reverse_attempts = 0; wedge_ref = None; wedge_ref_t = 0.0; ok_since = 0.0
     v_curve_trim = 1.0                            # closed-loop corner-speed trim (realized-g feedback)
     corner_gutil = 0.80                           # trim target: creep corner speed up until this frac of grip
@@ -1071,6 +1073,7 @@ def main() -> int:
                     scap_on = float(_t.get("scap_on", scap_on))
                     ff_loadcomp = float(_t.get("ff_loadcomp", ff_loadcomp))
                     ffm_w = float(_t.get("ffm_w", ffm_w))
+                    ffm_gsc = float(_t.get("ffm_gsc", ffm_gsc))
                     crest_hold = float(_t.get("crest_hold", crest_hold))
                     aw_on = float(_t.get("aw_on", aw_on))
                     cr_on = float(_t.get("cr_on", cr_on))
@@ -1325,6 +1328,15 @@ def main() -> int:
                 if _wl > 0.0:
                     _ffm = math.copysign(ffmap_steer(kappa_ff, spd * 3.6), kappa_ff)
                     ff = (1.0 - _wl) * ff + _wl * _ffm
+                    # GAIN CO-SCALING (rung-1b lesson, 8.1/s reversal chatter): the reactive
+                    # gains are tuned around the FF deficit; as the map fills it, they must
+                    # shrink or the loop over-supplies and hunts. ffm_gsc = fraction shed at
+                    # full map weight (applied to the pursuit + P terms via _fsc below).
+                    _fsc = 1.0 - ffm_gsc * _wl
+                else:
+                    _fsc = 1.0
+            else:
+                _fsc = 1.0
             # CORRECTION SCHEDULING (user's S7->S8->S9 diagnosis, 07-05): the S-oscillation
             # is choreographed by the compression-crest sequence -- (a) in COMPRESSIONS
             # (load>1) every steering term is over-effective, so line corrections OVERSHOOT
@@ -1354,8 +1366,8 @@ def main() -> int:
             _corr_p = corr
             if cr_on > 0.0 and zpp_ahead6[i0] > 0.002 and float(scap_zpp[i0]) < 0.002 and _turn:
                 _corr_p = 1.0
-            h_t = k_head * alpha * corr * _hw   # pursuit: align heading with the line
-            p_t = kp_eff * cte_ctrl * _corr_p
+            h_t = k_head * alpha * corr * _hw * _fsc   # pursuit: align heading with the line
+            p_t = kp_eff * cte_ctrl * _corr_p * _fsc
             i_t = ki * cte_int
             d_t = kd * cte_dot_f * corr
             steer = STEER_SIGN * (ff + h_t + p_t + i_t + d_t)
@@ -1713,7 +1725,12 @@ def main() -> int:
             # cut the stations 15-55 m UPSTREAM -- offs land downstream of their cause (the
             # S11 lesson) -- at most once per station per lap so one long excursion doesn't
             # nuke a corner the bot then spends an evening re-earning.
-            if vtrim_on > 0.0 and f.race_position >= 1 and launched:
+            if vtrim_on > 0.0 and f.race_position >= 1:
+                # NOTE 07-17: gate relaxed from `and launched` -- wedge-reset-wedge cycles never
+                # re-arm the launch guard, so the map's incident-cuts NEVER fired for the very
+                # incidents that need them most (the post-update hairpin storm: 28 wedges/2h with
+                # zero cuts recorded). Credits/debits below still require `launched`; only the
+                # WEDGE-CUT (stopped off-track) fires un-launched, once per episode.
                 if int(f.lap_no) != vtrim_lap:
                     vtrim_lap = int(f.lap_no); vtrim_penalized.clear()
 
@@ -1735,7 +1752,25 @@ def main() -> int:
                         vnet.step(vXf[idxs], amt * vtrim_netscale)
                     vtrim_dirty += 1
 
-                incident = (not on_track) or acte > 8.0 or abs(sideslip) > args.full_slide_deg
+                # WEDGE-CUT (fires regardless of launch state): car STOPPED off-track ~0.5s ->
+                # cut upstream once per episode. This is the missing signal that let the hairpin
+                # wedge loop persist: each wedge now teaches the approach, launch guard or not.
+                if (not on_track) and spd < 2.8:
+                    wedge_cut_ticks += 1
+                    if wedge_cut_ticks == 35 and not wedge_cut_done:
+                        _wh = []
+                        d_b, j_b = 0.0, i0
+                        while d_b < 55.0:
+                            j_b = (j_b - 1) % n; d_b += seg[j_b]
+                            if d_b >= 15.0 and j_b not in vtrim_penalized:
+                                vtrim_penalized.add(j_b); _wh.append(j_b)
+                        if _wh:
+                            _vt_bump(_wh, -vtrim_cut)
+                        wedge_cut_done = True
+                elif spd > 8.0:
+                    wedge_cut_ticks = 0; wedge_cut_done = False
+
+                incident = launched and ((not on_track) or acte > 8.0 or abs(sideslip) > args.full_slide_deg)
                 if incident:
                     hit = []
                     d_b, j_b = 0.0, i0
@@ -1752,7 +1787,7 @@ def main() -> int:
                     _hc = int(acm_haz_of[i0])
                     if _hc >= 0 and _hc not in acm_penalized:
                         acm_penalized.add(_hc); acm_hits[_hc] += 1.0; acm_dirty = True
-                elif spd * 3.6 > 35.0 and a_lat_now > 2.0:
+                elif launched and spd * 3.6 > 35.0 and a_lat_now > 2.0:
                     # LOCAL attribution (+-6 m around the car): the measured g RIGHT NOW
                     # proves/disproves the speed AT THIS STATION (window-ahead attribution
                     # left corner entries never earning). No fc_frac gate: redundant with
@@ -1787,7 +1822,7 @@ def main() -> int:
                             win.append(j_f)
                             d_f += seg[j_f]; j_f = (j_f + 1) % n
                         _vt_bump(win, -vtrim_dn if g_util_m > 0.98 else vtrim_up)
-                elif (spd * 3.6 > 60.0 and abs(err) * 3.6 < 5.0 and (half - abs(off_c)) > 1.2
+                elif (launched and spd * 3.6 > 60.0 and abs(err) * 3.6 < 5.0 and (half - abs(off_c)) > 1.2
                       and brake == 0.0 and not (vtrim_hold_geo > 0.0 and cg_geo_mask[i0])):
                     # STRAIGHT RE-EARN: incident cuts can land on low-lateral stations
                     # (bank exits, kink run-ups) that the cornering credit -- gated on
