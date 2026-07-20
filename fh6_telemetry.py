@@ -261,9 +261,19 @@ def main() -> int:
     announced_len = False
     frames = 0
 
+    sock.settimeout(1.0)   # so Ctrl+C is honored even when the game stops sending
+    quiet = 0.0
     try:
         while True:
-            data, _addr = sock.recvfrom(2048)
+            try:
+                data, _addr = sock.recvfrom(2048)
+            except socket.timeout:
+                quiet += 1.0
+                if quiet in (10.0, 30.0, 60.0):
+                    print(f"\n  no packets for {quiet:.0f}s -- check: game in gameplay? Data Out On,"
+                          f" 127.0.0.1:{args.port}? another listener holding the port?")
+                continue
+            quiet = 0.0
             if not announced_len:
                 base = _dash_base(len(data), args.dash_offset)
                 print(f"First packet: {len(data)} bytes  ->  dash base offset {base}")
