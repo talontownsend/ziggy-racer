@@ -1,4 +1,4 @@
-# Project Map — what lives where (post-cleanup, 2026-07-20)
+# Project Map - what lives where (post-cleanup, 2026-07-20)
 
 ```
 FH6-AFK-Farm/
@@ -43,7 +43,7 @@ FH6-AFK-Farm/
 │
 └── recordings/          ← DATA. Root = only live/load-bearing artifacts:
     ├── tune.json               ← hot-reload config (~2.4 Hz). See OPERATIONS.md for keys.
-    ├── follow_log.csv          ← ACTIVE telemetry log (truncated on relaunch — archive first)
+    ├── follow_log.csv          ← ACTIVE telemetry log (truncated on relaunch - archive first)
     ├── refline_plan.npz        ← THE reference plan (line/walls/speed = human 27.28 lap)
     ├── session_20260621_093038_plan.npz ← argparse --plan DEFAULT (trap: manual launches
     │                              without --plan load this; watchdog always passes --plan)
@@ -52,14 +52,13 @@ FH6-AFK-Farm/
     ├── surface_cap/sheet.npz, bank_map.npz, load_map.npz, limits_edges_plan.npz ← survey physics
     ├── bc_policy.npz, bc_dataset*.npz, residual_net.npz ← learning artifacts
     ├── sections.json, vehicle_spec.json, track_geo.csv, elevation/speed_profile.csv
-    ├── run_*.csv, session_*.csv ← HUMAN recordings (BC/refline sources — do not move,
+    ├── run_*.csv, session_*.csv ← HUMAN recordings (BC/refline sources - do not move,
     │                              referenced by absolute path in tools/)
     ├── archive_logs/    ← all historical follow_log_*.csv archives (GBs)
     ├── snapshots/       ← map/policy/plan snapshots & backups (incl. ship_snapshot_0707,
     │                       bc_campaign_0713, plan variants, old policies)
     ├── archive_data/    ← one-off captures, debug outputs, viz exports, ES-era state
-    ├── limits_left/ limits_right/ refline/ survey/ ← raw survey data (rebuild inputs —
-    │                       referenced by tools/build_* — keep in place)
+    ├── limits_left/ limits_right/ refline/ survey/ ← raw survey data (rebuild inputs - │                       referenced by tools/build_* - keep in place)
 ```
 
 **Immovable rules:** everything in the repo root is referenced by module name or absolute path
