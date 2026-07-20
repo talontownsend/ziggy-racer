@@ -17,7 +17,8 @@ FH6-AFK-Farm/
 ├── follower_stdout.log / follower_stderr.log / watchdog.log   ← ACTIVE logs (path-referenced)
 │
 ├── docs/                ← documentation (start with CONSTRAINTS.md)
-│   ├── CONSTRAINTS.md          ← design principles + hard-won rules  ★ read first
+│   ├── CONSTRAINTS.md          ← program constraints (invariants + exceptions register) ★
+│   ├── METHODOLOGY.md          ← A/B testing rules, control-law lessons, artifact envelopes
 │   ├── OPERATIONS.md           ← runbook: start/pause/record/A-B/post-update checklist
 │   ├── PROJECT_MAP.md          ← this file
 │   ├── S9_SOLUTION_REVIEW.md   ← the S9/S7 campaign write-up

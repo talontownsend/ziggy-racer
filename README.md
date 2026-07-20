@@ -22,7 +22,8 @@ A ~2.3 s gap to a skilled human, closed entirely from physics and the car's own 
 
 ---
 
-> **Project docs:** [docs/CONSTRAINTS.md](docs/CONSTRAINTS.md) (design principles & operating rules) ·
+> **Project docs:** [docs/CONSTRAINTS.md](docs/CONSTRAINTS.md) (program constraints) ·
+> [docs/METHODOLOGY.md](docs/METHODOLOGY.md) (testing rules & lessons) ·
 > [docs/PROJECT_MAP.md](docs/PROJECT_MAP.md) (repo layout) · [docs/OPERATIONS.md](docs/OPERATIONS.md) (runbook)
 
 ## Table of contents
