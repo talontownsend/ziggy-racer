@@ -24,14 +24,25 @@ $addKeys = @{ w_speed=0.08; ff_use_line=1.0; w_merge=6.0; k_d=3.0; head_use_line
 function WLog($m) { "$((Get-Date).ToString('MM-dd HH:mm:ss')) $m" | Add-Content $wlog }
 
 $lastRestart = (Get-Date).AddMinutes(-10)
+$lastLen = -1
+$lastGrow = Get-Date
 $count = 0
-WLog "watchdog started (stale>180s, cooldown 360s, max 10 restarts)"
+WLog "watchdog started (no-growth>180s, cooldown 360s, max 30 restarts)"
 while ($true) {
   Start-Sleep -Seconds 30
   $li = Get-Item $log
   # missing log = follower never started (e.g. log was archived/renamed with no follower up):
   # treat as maximally stale instead of skipping forever (07-13 blind spot: rename+dead follower)
   $age  = if ($li) { ((Get-Date) - $li.LastWriteTime).TotalSeconds } else { 9999 }
+  # PROGRESS, not mtime (07-29: cost a 90-minute silent death). The follower touches
+  # follow_log.csv periodically even while it writes no telemetry rows -- stuck in the
+  # recovery loop, car parked in free roam -- so LastWriteTime kept resetting below the
+  # threshold and this check never fired. File length is the honest signal: if the log has
+  # not GROWN, the driver is not driving, whatever the timestamp says.
+  $len = if ($li) { $li.Length } else { 0 }
+  if ($len -ne $lastLen) { $lastLen = $len; $lastGrow = Get-Date }
+  $stall = ((Get-Date) - $lastGrow).TotalSeconds
+  if ($stall -gt $age) { $age = $stall }
   $cool = ((Get-Date) - $lastRestart).TotalSeconds
   if ($age -gt 180 -and $cool -gt 360) {
     if ($count -ge 30) { WLog "STALE ${age}s but hit 30-restart cap -> giving up (needs human)"; break }

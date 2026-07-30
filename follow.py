@@ -305,8 +305,24 @@ def main() -> int:
         _ar = 0.5 * np.abs((_p1[:, 0] - _p0[:, 0]) * (_p2[:, 1] - _p0[:, 1]) -
                            (_p1[:, 1] - _p0[:, 1]) * (_p2[:, 0] - _p0[:, 0]))
         _kl = np.maximum(_kl, 4.0 * _ar / np.maximum(_a * _b * _c, 1e-9))
-    v_own = np.minimum(np.sqrt(args.planner_alat / np.maximum(_kl - args.planner_alat_k, 1e-4)),
+    _vraw = np.minimum(np.sqrt(args.planner_alat / np.maximum(_kl - args.planner_alat_k, 1e-4)),
                        float(args.speed_cap))
+    # The live v_curve uses max_kappa_line_ahead(18 m), i.e. the WORST curvature in the next
+    # 18 m, not the curvature at this station. Taking the per-station value instead reads
+    # +23.7 km/h high (median, p90 error 89 km/h, corr 0.722 vs logged v_curve) because just
+    # before a corner the station itself is still straight. Shipping that raw profile on
+    # 07-29 sent the car into the crest hazards at a claimed 162 km/h where the real cap is
+    # 131, and median lap time went 29.7 -> 33.5. The 18 m forward window-min reproduces the
+    # logged v_curve to -1.5 km/h median (corr 0.905) and agrees with the human plan exactly
+    # where the hazards are, lifting only where there is genuine headroom.
+    v_own = _vraw.copy()
+    for _i in range(n):
+        _d, _j, _m = 0.0, _i, _vraw[_i]
+        while _d < 18.0:
+            if _vraw[_j] < _m:
+                _m = _vraw[_j]
+            _d += seg[_j]; _j = (_j + 1) % n
+        v_own[_i] = _m
     vplan_eff = vplan.copy()              # vown_w=0 -> exactly the old behaviour
     print(f"v_own: self-model speed {v_own.min()*3.6:.0f}-{v_own.max()*3.6:.0f} km/h; "
           f"higher than the human plan at {100.0*(v_own > vplan*1.02).mean():.0f}% of stations")
@@ -736,7 +752,7 @@ def main() -> int:
                    "ff", "p_t", "i_t", "d_t", "cte_int", "cte_dot", "kappa_ff",
                    "lap_no", "lap_t", "sideslip", "plan_d0", "plan_L", "plan_deg",
                    "psi_deg", "km_max", "kap_car", "vcurve_kmh", "thr_cap", "yawrate",
-                   "meas_latg", "drive_slip", "alat_max_g", "fc_frac",
+                   "meas_latg", "drive_slip", "brake_lock", "alat_max_g", "fc_frac",
                    "r_des", "r_meas", "e_r", "over", "under", "race_pos",
                    "y", "pitch_deg", "roll_deg",
                    "vt2_mult", "vt2_inside",
@@ -920,6 +936,8 @@ def main() -> int:
                                                   # laps flat 31.1). Debit at 0.98 unchanged.
     vtrim_lo, vtrim_hi = 0.80, 1.55               # map bounds
     vtrim_dmax = 0.80                             # anti-windup bound on the delta STATE
+    brk_lock_slip = 2.0                           # brake anti-lock threshold
+    brk_lock_mode = 0.0                           # 0 = combined slip (legacy), 1 = longitudinal lockup
     vtrim_netscale = 0.1                          # net step = table step x this (generalization rate)
     vtrim_reset = 0.0                             # hot: change to a NEW nonzero value -> delta := 0
     vtrim_dirty = 0                               # unsaved map changes pending
@@ -1146,6 +1164,8 @@ def main() -> int:
                     vtrim_lo = float(_t.get("vtrim_lo", vtrim_lo))
                     vtrim_hi = float(_t.get("vtrim_hi", vtrim_hi))
                     vtrim_dmax = float(_t.get("vtrim_dmax", vtrim_dmax))
+                    brk_lock_slip = float(_t.get("brk_lock_slip", brk_lock_slip))
+                    brk_lock_mode = float(_t.get("brk_lock_mode", brk_lock_mode))
                     vtrim_netscale = float(_t.get("vtrim_netscale", vtrim_netscale))
                     _vr = float(_t.get("vtrim_reset", vtrim_reset))
                     if _vr != vtrim_reset and _vr != 0.0:
@@ -1646,6 +1666,12 @@ def main() -> int:
                 v_curve_trim += (1.0 - v_curve_trim) * 0.02      # relax toward 1.0 on straights
             drive_slip = max(abs(f.combined_slip_fl), abs(f.combined_slip_fr),
                              abs(f.combined_slip_rl), abs(f.combined_slip_rr))
+            # LONGITUDINAL lockup depth: slip_ratio < 0 means the wheel is turning slower
+            # than the road, which is what "locking under braking" actually is. Logged
+            # unconditionally so the threshold for brk_lock_mode=1 can be calibrated from
+            # the bot's own slip-vs-delivered-decel curve rather than guessed.
+            brake_lock = max(0.0, -min(f.slip_ratio_fl, f.slip_ratio_fr,
+                                       f.slip_ratio_rl, f.slip_ratio_rr))
             # (fix-b attempt REVERTED 07-03: gating this on longitudinal slip_ratio alone
             # -- to stop the S12 bank's lateral load from muting the pedal -- caused
             # power-on oversteer: sideslip p99 7.4 -> 27.8 deg, off 1.4 -> 8.4%. The
@@ -1665,9 +1691,20 @@ def main() -> int:
             # Derate the brake past the lock threshold so the contact patch stays alive and lateral
             # g stays loaded under braking -- real trail-braking instead of a lockup skid. Mirrors
             # the throttle's slip_frac (proven), with a higher lock-specific threshold.
-            LOCK_SLIP = 2.0
-            brake_slip_frac = 1.0 if drive_slip <= LOCK_SLIP else \
-                max(0.25, 1.0 - (drive_slip - LOCK_SLIP) / LOCK_SLIP)
+            # 07-29 MEASUREMENT: this derate was firing as a STEERING detector, not a lockup
+            # detector. drive_slip is COMBINED slip (lateral included), so at full lock it
+            # trips with no wheel lockup at all: measured on 19.6k braking ticks, when the
+            # derate fires |steer| is 1.00 median vs 0.76 when it doesn't, it fires 53% of
+            # full-lock braking time vs 14% at low steer, corr(|steer|, drive_slip) = +0.48.
+            # It was active 3.42 s of every lap and cut the pedal from ~0.66 to ~0.38.
+            # And the threshold has no physical basis: the bot's OWN delivered deceleration
+            # is flat (19.8-21.8 m/s^2) from slip 0.5 through 3.0, i.e. there is no lockup
+            # cliff anywhere near 2.0. Cornering-load coupling is already handled separately
+            # by brake_cap = max(fc_frac, 0.2), so the combined term is redundant here.
+            # brk_lock_mode 1 uses the physically correct longitudinal signal instead.
+            _lock = brake_lock if brk_lock_mode > 0.0 else drive_slip
+            brake_slip_frac = 1.0 if _lock <= brk_lock_slip else \
+                max(0.25, 1.0 - (_lock - brk_lock_slip) / brk_lock_slip)
             err = target_v - spd
             # BRAKE FEEDFORWARD (braking-zone fix): the brake was pure-proportional, so it
             # NEEDED a standing speed error to hold any pedal -- following the anticipation
@@ -2132,6 +2169,7 @@ def main() -> int:
                            round(kap_car, 4), round(v_curve * 3.6, 1), round(thr_cap, 3),
                            round(f.angvel_y, 3),
                            round(f.ax / 9.81, 2), round(drive_slip, 2),
+                           round(brake_lock, 2),
                            round(alat_max_now / 9.81, 2), round(fc_frac, 2),
                            round(r_des, 3), round(r_meas_f, 3), round(e_r, 3),
                            int(oversteer), int(understeer), f.race_position,

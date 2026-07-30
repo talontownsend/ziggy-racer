@@ -234,7 +234,17 @@ def recover_to_racing(gp, btn, get_frame, hwnd=None, log=print, budget=300, post
             # text, for several consecutive reads. This stops us pressing START mid-load
             # (which mis-navigates -- the load-into-free-roam after a race isn't instant).
             fr = get_frame()
-            in_world = fr is not None and fr.is_race_on == 1 and \
+            if fr is None:
+                # NO TELEMETRY THIS TICK IS NOT EVIDENCE OF ANYTHING. The follower owns UDP
+                # 7777 and this read races it, so frames go missing intermittently. Treating
+                # a missing frame as "not in world" reset other_runs, and since free roam was
+                # only confirmed on roughly 1 read in 4, the >=4 gate became unreachable and
+                # recovery looped forever (07-29: 90 minutes parked in free roam after the
+                # 50-lap race ended, with the counter never passing 1/4). Skip the tick and
+                # keep the count.
+                time.sleep(1.0)
+                continue
+            in_world = fr.is_race_on == 1 and \
                 (abs(fr.pos_x) > 1.0 or abs(fr.pos_z) > 1.0)
             if not in_world:
                 other_runs = 0
