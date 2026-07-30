@@ -944,6 +944,7 @@ def main() -> int:
     vtrim_dmax = 0.80                             # anti-windup bound on the delta STATE
     brk_lock_slip = 2.0                           # brake anti-lock threshold
     brk_lock_mode = 0.0                           # 0 = combined slip (legacy), 1 = longitudinal lockup
+    pdg_gain = 0.0                                # plan_degraded speed floor bonus (0 = legacy)
     car_ok = True                                 # car-identity guard state
     car_rpm_expect = _car_rpm0                    # expected max_rpm fingerprint (0 = guard off)
     vtrim_netscale = 0.1                          # net step = table step x this (generalization rate)
@@ -1175,6 +1176,7 @@ def main() -> int:
                     brk_lock_slip = float(_t.get("brk_lock_slip", brk_lock_slip))
                     brk_lock_mode = float(_t.get("brk_lock_mode", brk_lock_mode))
                     car_rpm_expect = float(_t.get("car_rpm_expect", car_rpm_expect))
+                    pdg_gain = float(_t.get("pdg_gain", pdg_gain))
                     vtrim_netscale = float(_t.get("vtrim_netscale", vtrim_netscale))
                     _vr = float(_t.get("vtrim_reset", vtrim_reset))
                     if _vr != vtrim_reset and _vr != 0.0:
@@ -1608,7 +1610,23 @@ def main() -> int:
                     # don't DEADLOCK at standstill: min(target, spd) is 0 when spd=0, so a car
                     # that lost the merge (wedged/badly placed) never gets throttle to recover.
                     # Keep a crawl floor so it can always move to re-establish the plan.
-                    target_v = min(target_v, max(spd, 4.0))
+                    #
+                    # ...but clamping to exactly `spd` makes err == 0, so the brake-onset
+                    # anticipation err_b = err - desc_f*bla_tau goes negative and the controller
+                    # falls into the BRAKE branch, whose braking lowers the target further and
+                    # self-sustains. Measured on 60,780 racing ticks: this fires 4.30% of the
+                    # time (~90 ticks/lap), applies brake on 88% of those ticks at a median
+                    # 175 km/h (p90 204) -- and median fc_frac there is 0.930, i.e. the car has
+                    # nearly all its longitudinal grip in hand. The trigger is a merge-CURVATURE
+                    # feasibility test (klim scales as a_lat/v^2, so at 200+ km/h a 1-2 m offset
+                    # reads "infeasible"), not a grip test. That makes it a speed cap on corner
+                    # exits and straights, which METHODOLOGY forbids outright.
+                    #
+                    # pdg_gain keeps err positive so the throttle branch is retained. Same cure
+                    # already proven above for the near-straight rejoin coast-lock (v_rejoin =
+                    # max(v_rejoin, spd + rejoin_gain)). Steering-side degradation is untouched:
+                    # the planner still returns its best candidate for pursuit, exactly as today.
+                    target_v = min(target_v, max(spd + pdg_gain, 4.0))
             # launch speed cap: ramp the allowed speed from launch-cap up to full over
             # the first launch-settle-m of travel, so a grid/off-line start eases onto
             # the racing line under control instead of blasting off-line and overshooting

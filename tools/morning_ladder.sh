@@ -69,19 +69,23 @@ import sys; sys.path.insert(0,'tools'); import ab_arm as A
 t=A.now_t(); m=A.scan(t_from=t-900,t_to=t)
 print('REFERENCE', {k:m[k] for k in ['n_laps','med','best','stalls']})"
 
-echo "== ARM 1: slip_target 1.05 -> 1.35 (throttle mute; tyres peak at slip 1.18-1.80) =="
+echo "== ARM 1: pdg_gain 2.0 (stop plan_degraded braking on straights with 93% grip in hand) =="
+$PY tools/ab_arm.py --label pdg2   --arm '{"pdg_gain":2.0}' --revert '{"pdg_gain":0.0}'   --equil 20 --score 40 --abort-stalls 4 --abort-med 30.8
+restore; sleep 420
+
+echo "== ARM 2: slip_target 1.05 -> 1.35 (throttle mute; tyres peak at slip 1.18-1.80) =="
 $PY tools/ab_arm.py --label slip135 \
   --arm '{"slip_target":1.35}' --revert '{"slip_target":1.05}' \
   --equil 20 --score 40 --abort-stalls 3 --abort-med 30.6 --check 120
 restore; sleep 420
 
-echo "== ARM 2: brk_lock_slip 2.0 -> 3.0 (brake mute; own decel curve flat to 3.0) =="
+echo "== ARM 3: brk_lock_slip 2.0 -> 3.0 (brake mute; own decel curve flat to 3.0) =="
 $PY tools/ab_arm.py --label brk_lock30 \
   --arm '{"brk_lock_slip":3.0}' --revert '{"brk_lock_slip":2.0}' \
   --equil 20 --score 40 --abort-stalls 4 --abort-med 30.8
 restore; sleep 420
 
-echo "== ARM 3: corrected v_own raise-only (model says -0.235 s) =="
+echo "== ARM 4: corrected v_own raise-only (model says -0.235 s) =="
 $PY tools/ab_arm.py --label vown_fixed \
   --arm '{"vown_w":1.0,"vown_raise":1.0}' --revert '{"vown_w":0.0}' \
   --equil 25 --score 40 --abort-stalls 4 --abort-med 30.8
