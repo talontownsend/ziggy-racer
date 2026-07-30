@@ -29,9 +29,10 @@ Monotone quality: stage 1 never accepts a step that raises J; stage 2 never
 accepts a step that raises lap time; and the final result is never shipped worse
 than the centerline (alpha = 0).
 """
+from __future__ import annotations
+
 import os as _os, sys as _sys
 _sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # repo root on the path: these tools live in tools/ but import root modules
-from __future__ import annotations
 
 import numpy as np
 
