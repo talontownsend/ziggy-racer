@@ -207,7 +207,10 @@ def main():
                 if m15["stalls"] >= a.abort_stalls:
                     aborted = f"ABORT: {m15['stalls']} stalls in trailing 15 min (limit {a.abort_stalls})"
                     break
-                if m15["n_laps"] >= 25 and m15["med"] and m15["med"] > a.abort_med:
+                # n>=12, not 25: a failing arm produces FEWER laps per window (incidents cost
+                # time), so a high lap-count gate can never fire on exactly the failure mode
+                # it is meant to catch.
+                if m15["n_laps"] >= 12 and m15["med"] and m15["med"] > a.abort_med:
                     aborted = f"ABORT: trailing median {m15['med']:.2f} over {m15['n_laps']} laps (limit {a.abort_med})"
                     break
             print(

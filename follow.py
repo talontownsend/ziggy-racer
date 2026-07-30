@@ -919,6 +919,7 @@ def main() -> int:
                                                   # corner tax (measured: g_util med 0.78 -> 0.62,
                                                   # laps flat 31.1). Debit at 0.98 unchanged.
     vtrim_lo, vtrim_hi = 0.80, 1.55               # map bounds
+    vtrim_dmax = 0.80                             # anti-windup bound on the delta STATE
     vtrim_netscale = 0.1                          # net step = table step x this (generalization rate)
     vtrim_reset = 0.0                             # hot: change to a NEW nonzero value -> delta := 0
     vtrim_dirty = 0                               # unsaved map changes pending
@@ -1144,6 +1145,7 @@ def main() -> int:
                     vtrim_gutil = float(_t.get("vtrim_gutil", vtrim_gutil))
                     vtrim_lo = float(_t.get("vtrim_lo", vtrim_lo))
                     vtrim_hi = float(_t.get("vtrim_hi", vtrim_hi))
+                    vtrim_dmax = float(_t.get("vtrim_dmax", vtrim_dmax))
                     vtrim_netscale = float(_t.get("vtrim_netscale", vtrim_netscale))
                     _vr = float(_t.get("vtrim_reset", vtrim_reset))
                     if _vr != vtrim_reset and _vr != 0.0:
@@ -1788,7 +1790,16 @@ def main() -> int:
                     if not idxs:
                         return
                     for j in idxs:
-                        vdelta[j] += amt
+                        # TRUE anti-windup on the integrator STATE, not just the output.
+                        # The pinned-station guard above is necessary but not sufficient:
+                        # vnet.step() generalizes every bump to similar stations, so net
+                        # drift repeatedly un-pins a saturated station for a few frames and
+                        # the delta ratchets up again. Measured 07-29: vdelta had wound to
+                        # +6.575 against a map bound of 1.55, i.e. 71% of the map was pinned
+                        # and its "learned" value meaningless. Clamping the state keeps the
+                        # map identical (1.0 + 0.8 still clips to 1.55) while making the
+                        # delta an honest, bounded record of what was actually earned.
+                        vdelta[j] = min(vtrim_dmax, max(-vtrim_dmax, vdelta[j] + amt))
                         vtrim_map[j] = min(vtrim_hi, max(vtrim_lo, vt_base[j] + vdelta[j]))
                     if vnet is not None and vtrim_netscale > 0.0:
                         vnet.step(vXf[idxs], amt * vtrim_netscale)
