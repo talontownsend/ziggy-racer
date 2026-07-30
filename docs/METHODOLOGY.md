@@ -28,6 +28,19 @@ Rules marked **(measured)** were established by a specific experiment.
 9. **Frozen-map arms overstate downstream breakage.** The deployed learner absorbs new arrival
    speeds by design; judge frozen arms in-zone, validate downstream with learning on **(measured)**.
 
+10. **Per-station MEDIANS are not additive.** Summing per-station median dwell inflates every
+    zone by about 1.6% (+0.479 s of phantom time on this lap) and will not reconcile against the
+    real lap-time gap. Use MEAN dwell for any decomposition that has to add up **(measured 07-29;
+    earlier work in this project used medians)**.
+11. **Judge farm liveness by log GROWTH, not file mtime.** The follower touches follow_log.csv
+    periodically while writing no telemetry rows, so a mtime-based staleness check reads healthy
+    through a completely dead farm **(measured 07-29: 90 minutes lost, watchdog and a purpose-built
+    monitor both fooled)**.
+12. **A missing measurement is not a negative measurement.** Recovery treated a dropped telemetry
+    frame as evidence against free roam and reset its confirmation counter, making the gate
+    unreachable **(measured 07-29)**. Any N-consecutive-confirmations gate must treat "no data" as
+    a skip, not a reset.
+
 ## Control-law lessons (constraints on future designs)
 
 - **Compensate latency/braking with ONSET, never GAIN.** Raising `brk_ff` causes branch-chatter
@@ -38,6 +51,14 @@ Rules marked **(measured)** were established by a specific experiment.
   or every zone over-brakes by desc·τ **(measured, bla v1/v2)**.
 - **Feedforward saturates:** `ffm_w` 0.15 is optimal, 0.30 strictly worse; reactive gains must
   shed as FF grows (`ffm_gsc`) **(measured)**.
+- **Check a derate's SIGNAL before its threshold.** Both pedal slip derates gate on COMBINED
+  slip (lateral included), so the brake one fires as a steering detector: at full lock it trips
+  53% of braking time with no wheel lockup, cutting the pedal from 0.66 to 0.38 for 3.42 s/lap
+  **(measured 07-29)**. And both thresholds sit below where this car's tyres make peak force.
+- **A long-range profile must use the same window as the short-range cap it feeds.** `v_curve`
+  uses `max_kappa_line_ahead(18 m)`; reading curvature per station instead reads +23.7 km/h high
+  (p90 error 89 km/h) because the station before a corner is still straight **(measured 07-29,
+  cost two arms at 33.5 s)**.
 - **Full stick = front tires at their limit** (game speed-sensitive steering); `fc_frac` is
   total grip and stays submaximal in understeer, so "add steering authority" framings are wrong.
 
