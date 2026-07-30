@@ -324,6 +324,12 @@ def main() -> int:
             _d += seg[_j]; _j = (_j + 1) % n
         v_own[_i] = _m
     vplan_eff = vplan.copy()              # vown_w=0 -> exactly the old behaviour
+    try:
+        with open(os.path.join(os.path.dirname(args.plan), 'vehicle_spec.json')) as _vf:
+            _vs = json.load(_vf)
+        _car_rpm0 = float(_vs.get('identity', {}).get('max_rpm', 0.0))
+    except Exception:
+        _car_rpm0 = 0.0
     print(f"v_own: self-model speed {v_own.min()*3.6:.0f}-{v_own.max()*3.6:.0f} km/h; "
           f"higher than the human plan at {100.0*(v_own > vplan*1.02).mean():.0f}% of stations")
 
@@ -938,6 +944,8 @@ def main() -> int:
     vtrim_dmax = 0.80                             # anti-windup bound on the delta STATE
     brk_lock_slip = 2.0                           # brake anti-lock threshold
     brk_lock_mode = 0.0                           # 0 = combined slip (legacy), 1 = longitudinal lockup
+    car_ok = True                                 # car-identity guard state
+    car_rpm_expect = _car_rpm0                    # expected max_rpm fingerprint (0 = guard off)
     vtrim_netscale = 0.1                          # net step = table step x this (generalization rate)
     vtrim_reset = 0.0                             # hot: change to a NEW nonzero value -> delta := 0
     vtrim_dirty = 0                               # unsaved map changes pending
@@ -1166,6 +1174,7 @@ def main() -> int:
                     vtrim_dmax = float(_t.get("vtrim_dmax", vtrim_dmax))
                     brk_lock_slip = float(_t.get("brk_lock_slip", brk_lock_slip))
                     brk_lock_mode = float(_t.get("brk_lock_mode", brk_lock_mode))
+                    car_rpm_expect = float(_t.get("car_rpm_expect", car_rpm_expect))
                     vtrim_netscale = float(_t.get("vtrim_netscale", vtrim_netscale))
                     _vr = float(_t.get("vtrim_reset", vtrim_reset))
                     if _vr != vtrim_reset and _vr != 0.0:
@@ -1806,7 +1815,21 @@ def main() -> int:
             # cut the stations 15-55 m UPSTREAM -- offs land downstream of their cause (the
             # S11 lesson) -- at most once per station per lap so one long excursion doesn't
             # nuke a corner the bot then spends an evening re-earning.
-            if vtrim_on > 0.0 and f.race_position >= 1:
+            # CAR-IDENTITY GUARD. Every learned artifact (vtrim map, steer-FF map, grip model)
+            # is calibrated for ONE car. On 07-29 an EventLab auto-restart silently swapped in
+            # a different car and the map learned on it for 7 minutes, moving 645 stations by
+            # up to 0.75 before it was caught by eye. max_rpm is a clean fingerprint straight
+            # out of the packet: Tacoma 8000, the intruder 11000. Learning is the irreplaceable
+            # asset, so freeze it and shout; keep DRIVING, because an AFK farm still earns.
+            if car_rpm_expect > 0.0 and f.max_rpm > 100.0:
+                _ok = abs(f.max_rpm - car_rpm_expect) <= 0.02 * car_rpm_expect
+                if _ok != car_ok:
+                    car_ok = _ok
+                    print(f"  *** CAR IDENTITY {'OK' if _ok else 'MISMATCH'}: max_rpm {f.max_rpm:.0f} "
+                          f"vs expected {car_rpm_expect:.0f}"
+                          f"{'' if _ok else '  -> vtrim learning FROZEN (wrong car; maps are per-car)'}",
+                          flush=True)
+            if vtrim_on > 0.0 and f.race_position >= 1 and car_ok:
                 # NOTE 07-17: gate relaxed from `and launched` -- wedge-reset-wedge cycles never
                 # re-arm the launch guard, so the map's incident-cuts NEVER fired for the very
                 # incidents that need them most (the post-update hairpin storm: 28 wedges/2h with

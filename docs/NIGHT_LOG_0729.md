@@ -154,12 +154,17 @@ curvature noise.
 
 ## Infrastructure: two bugs that cost the night
 
-**1. The watchdog could not see a dead farm.** The 50-lap race ended at 22:03 and the farm sat
-dead for 90 minutes. The watchdog's staleness check used the log's `LastWriteTime`, and the
-follower *touches* `follow_log.csv` periodically even while writing no telemetry rows - so the
-timestamp kept resetting below the threshold and the check never fired. My own health monitor
-used the same signal and was fooled identically. **Fixed:** the watchdog now tracks file
-**growth**; if the log has not grown, the driver is not driving, whatever the timestamp says.
+**1. Liveness was judged by mtime, which lies.** At 22:08 the log's `LastWriteTime` read 91 s old
+while its rows had been frozen at t=2.971 since 22:03 - the follower touches `follow_log.csv`
+without writing telemetry rows, so a mtime-based staleness check can read healthy through a dead
+farm. My own health monitor used the same signal and was fooled identically. **Fixed:** the
+watchdog now tracks file **growth**; if the log has not grown, the driver is not driving,
+whatever the timestamp says. Verified working - it fired correctly at 22:11 and 22:20.
+
+*Correction to an earlier draft of this log: I wrote that this cost 90 minutes. It did not. I
+had been mis-tracking wall-clock time across long waits; the actual non-racing period began
+around 22:03. The mtime weakness is real and worth fixing, but it was not the expensive part of
+the night - the expensive part is item 2, which restarting the follower cannot fix.*
 
 **2. Recovery could never confirm free roam.** The free-roam path needs 4 consecutive
 confirmations, but `in_world` depends on `get_frame()`, and the follower owns UDP 7777 so

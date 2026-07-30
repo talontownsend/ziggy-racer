@@ -29,5 +29,9 @@
     "grip_intercept_ratio_at_current_usable": 1.47,
     "brake_ratio": 1.54,
     "note": "Menu friction magnitudes sandbagged by a consistent ~1.5x for this X-class build; menu SHAPE (downforce slope, friction-circle brake/grip ratio 0.95) matches measurement. Car-agnostic recipe: menu shape x measured game-vs-menu scale factor; measurement always outranks menu upward."
+  },
+  "identity": {
+    "max_rpm": 8000,
+    "note": "car fingerprint: follow.py freezes vtrim learning if live max_rpm deviates >2% (07-29: an EventLab auto-restart swapped in a Skyline at 11000 rpm and the map learned on it for 7 min before anyone noticed)"
   }
 }
