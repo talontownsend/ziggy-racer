@@ -1,4 +1,6 @@
 """Synthetic-packet self-test for fh6_telemetry.parse_packet (no game needed)."""
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # repo root on the path: these tools live in tools/ but import root modules
 import struct
 from fh6_telemetry import parse_packet, HORIZON_DASH_BASE
 

@@ -11,6 +11,8 @@ Pipeline: align the two edge loops by progression, pair them perpendicular into 
 corridor, straighten the start/finish seam, despike, inset for car-body clearance,
 solve the min-time line (cand_grad), grade-aware speed profile.
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # repo root on the path: these tools live in tools/ but import root modules
 import csv, json, sys
 import numpy as np
 import matplotlib; matplotlib.use("Agg")

@@ -5,6 +5,8 @@ full width through the ends (out-apex-out), cutting curvature there, and run nea
 center on the straights -- a clear, racing-relevant curvature reduction. The speed
 profile must respect grip / accel / brake / v_max.
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # repo root on the path: these tools live in tools/ but import root modules
 import numpy as np
 from racing_line import (resample_closed, menger_curvature, min_curvature_line,
                          velocity_profile, plan_racing_line)

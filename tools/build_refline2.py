@@ -3,6 +3,8 @@ instead of the dedicated-but-slower refline session (27.28 s) the v1 plan was bu
 Same pipeline as build_refline.py (imitation line + real corridor + human speed x1.05).
 Writes a CANDIDATE (refline_plan_v2.npz) + validation stats; does NOT touch the live plan.
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # repo root on the path: these tools live in tools/ but import root modules
 import csv, sys
 import numpy as np
 sys.path.insert(0, r"C:\Users\talon\FH6-AFK-Farm")

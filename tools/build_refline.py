@@ -2,6 +2,8 @@
 Pick the fastest lap, use its trajectory directly as the line, pair it with the real
 track edges (from the edge runs) for on-track boundaries + elevation, compute the
 speed profile. This gives the out-in-out line the user actually drives."""
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # repo root on the path: these tools live in tools/ but import root modules
 import csv, sys
 import numpy as np
 sys.path.insert(0, r"C:\Users\talon\FH6-AFK-Farm")

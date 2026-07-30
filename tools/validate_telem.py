@@ -2,6 +2,8 @@
 parses with the new parse_packet, and prints the grip/slip signals so we can confirm
 they respond correctly (≈0 at rest, spike under throttle/cornering) before recording
 50 laps. Runs ~35 s then prints a min/max summary."""
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # repo root on the path: these tools live in tools/ but import root modules
 import socket, sys, time
 sys.path.insert(0, r"C:\Users\talon\FH6-AFK-Farm")
 from fh6_telemetry import parse_packet

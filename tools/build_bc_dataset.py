@@ -10,6 +10,8 @@ Recording cols: timestamp_ms,is_race_on,lap_no,cur_lap_time,cur_race_time,dist_t
   pos_x,pos_y,pos_z,speed_mps,yaw,pitch,roll,vel_x,vel_y,vel_z,angvel_x,angvel_y,angvel_z,
   rpm,gear,accel,brake,steer
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # repo root on the path: these tools live in tools/ but import root modules
 import csv, math, os, sys
 import numpy as np
 sys.path.insert(0, r"C:\Users\talon\FH6-AFK-Farm")

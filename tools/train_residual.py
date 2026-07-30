@@ -17,6 +17,8 @@ Run: the follower must already be running with resid integration (it is after th
 relaunch); this script sets resid_on=1 in tune.json, then loops. Ctrl-C to stop; rerun to resume
 (pass --resume). Progress -> train_log.csv.
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # repo root on the path: these tools live in tools/ but import root modules
 import argparse, csv, json, os, time
 import numpy as np
 from residual_net import ResidualNet

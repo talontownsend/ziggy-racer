@@ -9,6 +9,8 @@ Fixed-point per station -> speed cap table, brake-cone smoothed (A=15 m/s^2).
 Output: recordings/surface_cap.npz {cap (m/s), bank, zpp}. Replaces crest_fac + load_map.
 Validation printout compares against known ground truth per zone.
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # repo root on the path: these tools live in tools/ but import root modules
 import os
 import numpy as np
 

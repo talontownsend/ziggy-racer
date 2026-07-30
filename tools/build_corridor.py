@@ -5,6 +5,8 @@ reference, we extract each boundary lap as its own ORDERED loop (so progression,
 not Euclidean nearness, defines stations), drop the short turnaround segment, then
 align the two loops and pair them into a corridor.
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # repo root on the path: these tools live in tools/ but import root modules
 import csv
 import json
 import sys

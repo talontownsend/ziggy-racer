@@ -10,6 +10,8 @@ the old v1 line -- the deployed policy cloned slow driving on stale geometry):
     split leaks adjacent 71-103Hz frames between train/val).
   - writes bc_dataset_v2fast.npz (does NOT overwrite bc_dataset.npz -- provenance lesson).
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # repo root on the path: these tools live in tools/ but import root modules
 import csv, math, os, sys
 import numpy as np
 sys.path.insert(0, r"C:\Users\talon\FH6-AFK-Farm")

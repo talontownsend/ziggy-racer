@@ -12,6 +12,8 @@ Raw bits are logged map-agnostically; decode_restart.py applies the button map.
 Pure ctypes -- no installs. Run in background; stop with TaskStop / Ctrl-C.
 Output: recordings/restart_capture_<ts>.jsonl
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # repo root on the path: these tools live in tools/ but import root modules
 import ctypes, json, os, socket, sys, time
 from ctypes import wintypes
 sys.path.insert(0, r"C:\Users\talon\FH6-AFK-Farm")

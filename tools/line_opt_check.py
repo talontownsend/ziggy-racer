@@ -8,6 +8,8 @@ Verifies (read-only, no farm files touched):
   3. wall clearance via exact point-to-wall-polyline distance (not station-aligned)
   4. section-by-section model speed comparison
 """
+import os as _os, sys as _sys
+_sys.path.insert(0, _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))  # repo root on the path: these tools live in tools/ but import root modules
 import os
 import sys
 
