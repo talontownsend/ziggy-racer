@@ -284,6 +284,33 @@ def main() -> int:
     print(f"plan: {n} pts, {seg.sum():.0f} m, target speed {vplan.min()*3.6:.0f}-{vplan.max()*3.6:.0f} km/h")
     s_of = np.concatenate([[0.0], np.cumsum(seg)])[:-1]   # arc length per station
 
+    # --- SELF-DERIVED SPEED PROFILE (independence fix, 07-29) -------------------------
+    # `vplan` is the HUMAN reference lap's speed at each station. It entered target_v as
+    #   target_v = min(tv * safety_eff, ...)   with tv = braking-anticipated min over vplan
+    # which made the human's lap a HARD CEILING on the bot everywhere: measured, it was the
+    # binding limiter 44% of ticks and at 5 of 8 corner minima, where the bot's OWN model
+    # allowed +5..+13 km/h more. That violates CONSTRAINTS.md rule 3 (no human-derived
+    # operating bounds) and the calibrated lap model priced it at +0.54 s/lap.
+    #
+    # v_own is the same closed-form the live v_curve uses -- v = sqrt(alat0/(k - alat_k)),
+    # the downforce-corrected solution of v^2 = a_lat(v)/k -- evaluated on the reference
+    # LINE's own curvature. So the long-range braking anticipation and the short-range
+    # corner cap now speak one model instead of two that disagree (at s614 the human plan
+    # said 139 km/h while v_curve said 100, so the car under-braked then corrected late).
+    # The line stays the human's (the one allowed exception); the SPEEDS become the bot's.
+    _kl = np.zeros(n)
+    for _sc in (3, 5, 8):                 # multi-scale, matching max_kappa_line_ahead's reach
+        _p0, _p1, _p2 = np.roll(line, _sc, 0), line, np.roll(line, -_sc, 0)
+        _a = np.hypot(*(_p1 - _p0).T); _b = np.hypot(*(_p2 - _p1).T); _c = np.hypot(*(_p2 - _p0).T)
+        _ar = 0.5 * np.abs((_p1[:, 0] - _p0[:, 0]) * (_p2[:, 1] - _p0[:, 1]) -
+                           (_p1[:, 1] - _p0[:, 1]) * (_p2[:, 0] - _p0[:, 0]))
+        _kl = np.maximum(_kl, 4.0 * _ar / np.maximum(_a * _b * _c, 1e-9))
+    v_own = np.minimum(np.sqrt(args.planner_alat / np.maximum(_kl - args.planner_alat_k, 1e-4)),
+                       float(args.speed_cap))
+    vplan_eff = vplan.copy()              # vown_w=0 -> exactly the old behaviour
+    print(f"v_own: self-model speed {v_own.min()*3.6:.0f}-{v_own.max()*3.6:.0f} km/h; "
+          f"higher than the human plan at {100.0*(v_own > vplan*1.02).mean():.0f}% of stations")
+
     # SELF-CALIBRATED per-station corner-speed map (INDEPENDENCE: the bot determines how
     # fast IT can go at each corner from ITS OWN experience -- never bound to the human's
     # speeds. The human's laps are for EVALUATION only; user 07-03). The cap becomes
@@ -920,6 +947,8 @@ def main() -> int:
     reversing = False; reverse_until = 0.0; reverse_from = None   # REVERSE-unstuck maneuver
     on_track = False       # init for first-tick reads (bc blend gate reads prev frame's value)
     wedge_cut_ticks = 0; wedge_cut_done = False   # wedge-cut episode state (fires un-launched)
+    vown_w = 0.0                                  # self-derived speed profile blend (0 = human plan)
+    vown_raise = 1.0                              # 1 = relaxation only (never below the human plan)
     reverse_attempts = 0; wedge_ref = None; wedge_ref_t = 0.0; ok_since = 0.0
     v_curve_trim = 1.0                            # closed-loop corner-speed trim (realized-g feedback)
     corner_gutil = 0.80                           # trim target: creep corner speed up until this frac of grip
@@ -1058,6 +1087,19 @@ def main() -> int:
                     cte_hard = float(_t.get("cte_hard", cte_hard))
                     planner_alat = float(_t.get("planner_alat", planner_alat))
                     planner_alat_k = float(_t.get("planner_alat_k", planner_alat_k))
+                    # self-derived speed profile blend (see v_own at plan load).
+                    # vown_w  0 = human plan (old), 1 = the bot's own model.
+                    # vown_raise 1 = relaxation only (never target BELOW the human plan),
+                    #            which isolates the ceiling removal from the anticipation change.
+                    _vw = float(_t.get("vown_w", vown_w))
+                    _vr = float(_t.get("vown_raise", vown_raise))
+                    if _vw != vown_w or _vr != vown_raise:
+                        vown_w, vown_raise = _vw, _vr
+                        _b = vplan + vown_w * (v_own - vplan)
+                        vplan_eff = np.maximum(_b, vplan) if vown_raise > 0.0 else _b
+                        print(f"  vown_w={vown_w:.2f} raise={vown_raise:.0f} -> plan speed "
+                              f"median {np.median(vplan_eff)*3.6:.1f} km/h "
+                              f"(was {np.median(vplan)*3.6:.1f})", flush=True)
                     slip_target = float(_t.get("slip_target", slip_target))
                     k_counter = float(_t.get("k_counter", k_counter))
                     r_thr = float(_t.get("r_thr", r_thr))
@@ -1445,9 +1487,9 @@ def main() -> int:
                                                              # too much speed into corners the steering can't hold
                                                              # -> off-track. Braking IS control-gated (leads corners).
             look = 20.0 + spd * spd / (2.0 * A_BRAKE)        # cover the braking distance, not a fixed 1.2*v
-            d2, j, tv = 0.0, i0, vplan[i0]
+            d2, j, tv = 0.0, i0, vplan_eff[i0]
             while d2 < look:
-                v_brake_ok = math.sqrt(vplan[j] ** 2 + 2.0 * A_BRAKE * d2)
+                v_brake_ok = math.sqrt(vplan_eff[j] ** 2 + 2.0 * A_BRAKE * d2)
                 tv = min(tv, v_brake_ok)
                 d2 += seg[j]
                 j = (j + 1) % n
