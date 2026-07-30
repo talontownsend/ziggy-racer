@@ -53,7 +53,7 @@ measured 3.362 s gap), which none of the project's earlier decompositions did.
 
 ## The three bugs that were costing lap time
 
-### 1. `plan_degraded` was braking on straights with 93% of grip unused (+0.65 s, low risk)
+### 1. `plan_degraded` was braking on straights with 93% of grip unused (real, but small)
 
 When no feasible merge exists, `target_v` was clamped to exactly `spd`. That makes `err == 0`,
 which drives the brake-onset anticipation negative and drops the controller into a brake branch
@@ -65,6 +65,14 @@ the car has nearly all its longitudinal grip in hand. The trigger is a merge-*cu
 feasibility test (`klim ~ a_lat/v²`, so a 1-2 m offset reads "infeasible" above 200 km/h), not a
 grip test. That makes it a speed cap on corner exits and straights, which METHODOLOGY forbids
 outright. One-line fix using the cure already proven for the rejoin coast-lock. Key `pdg_gain`.
+
+**Sizing correction.** The analysis that surfaced this priced it at +0.65 s and I nearly made it
+arm 1 on that basis. My own direct measurement disagrees: 5.2 episodes/lap, median 0.17 s each,
+median in-episode speed drop 4.6 km/h, first-order cost **0.027 s/lap** (excluding re-accel, so a
+lower bound - call it 0.05-0.15 s realistically). That is **at or below the 0.09 s resolution** of
+a 40-minute scored window, so it can never be cleanly measured on its own. It is a correctness fix
+worth shipping, not a headline win, and it rides along in the combined arm rather than burning a
+window. Left default-off (`pdg_gain = 0.0`) pending that.
 
 ### 2. Both pedals are muted below the tyres' own peak
 
@@ -166,8 +174,9 @@ and that is not a risk worth taking unsupervised on your machine.
 
 ## Backlog, ranked by risk-adjusted value
 
-Armed in `tools/morning_ladder.sh` (in order): **pdg_gain 2.0**, **slip_target 1.35**,
-**brk_lock_slip 3.0**, **vown_w 1.0**.
+Armed in `tools/morning_ladder.sh` (in order): **slip_target 1.35**, **brk_lock_slip 3.0**,
+**vown_w 1.0**, then a combined arm carrying whatever won plus `pdg_gain`. Ordered by expected
+value *relative to the 0.09 s measurement floor*, not by raw estimate.
 
 Next best, not yet built: self-calibrated peak-grip slip table replacing the `slip_target`
 literal (+0.44); decouple speed-path curvature from steering-FF curvature (+0.39); shorten the
