@@ -137,6 +137,7 @@ measurement rather than argument:
 | off-line speed governor | no: cte is *better* now (0.71 m vs 1.09 m median) |
 | `plan_degraded` clamp | no: 0.13% of ticks now vs 4.31% at baseline |
 | learner ratcheting down | no: 50-lap frozen window scored 33.37 vs 33.36 with learning on |
+| CPU contention from a runaway process | no - and the timeline was tempting. `Adobe Desktop Service.exe` has been spinning at 85% of one core since 15:32 on 07-31, i.e. through every degraded window and not through the 07-29 baseline. But both mechanisms are measurably absent: follower loop period 14.00 ms med / p99 16 ms / **0.00% of ticks over 20 ms** in BOTH windows (jitter actually lower tonight, 0.93 vs 1.06 ms sd), and input-to-yawrate lag **196 ms in both** (the 07-13 update moved it +28 ms and cost 1.5 s/lap). One core of 28 is ~3% of the machine, and the GPU idled at 19% / 56 C / fan 0%. |
 | two followers fighting | no - and this was my error: the follower normally shows as TWO PIDs (myenv launcher + Python312 child, same parentage, same creation second). I killed a healthy child believing it was a duplicate, and briefly shipped a single-instance lock on that misreading. Both reverted. |
 
 The one window that did reach 32.32 (47 laps, 02:19-02:49) has not reproduced, on the same map
