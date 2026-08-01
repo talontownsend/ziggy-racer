@@ -76,6 +76,28 @@ Rules marked **(measured)** were established by a specific experiment.
 - **Full stick = front tires at their limit** (game speed-sensitive steering); `fc_frac` is
   total grip and stays submaximal in understeer, so "add steering authority" framings are wrong.
 
+## Working prior: the conservative-looking limiters are load-bearing
+
+Three independent relaxations have now been proposed from static analysis and **all three
+measured worse in the car** (08-01, 50 scored laps each, non-overlapping IQRs):
+
+| relaxation | paper argument | measured |
+|---|---|---|
+| remove the human speed ceiling (`vown_w` 1.0) | it caps below the bot's own model at 418/1000 stations | **+0.90 s** |
+| `slip_target` 1.05 -> 1.35 | tyres peak at slip 1.18-1.80 | **0 -> 4 stalls / 15 min** |
+| `brk_lock_slip` 2.0 -> 3.0 | delivered decel is flat to slip 3.0 | **+1.12 s** |
+
+The tyre-data arguments were not wrong about the tyres; they were wrong about the consequence.
+Extra slip goes into rotation rather than drive, deeper brake slip lengthens the stop, and the
+human speed field encodes corner knowledge the curvature model does not have. **Treat any
+"this limiter is too conservative" finding as a hypothesis with a poor prior until it survives
+a scored window.** The remaining lap time is not sitting behind these limits.
+
+Corollary on the lap model: it predicted the `vown` arm would GAIN 0.235 s and it lost 0.90 s -
+**wrong in sign**. `tools/line_opt_solver.py` is trustworthy for "what does this constraint set
+imply" and not for "what will this control change do"; it has no representation of how the
+tracker behaves when targets move.
+
 ## Measured artifacts and validity envelopes
 
 | Artifact | What | Envelope / caveats |
