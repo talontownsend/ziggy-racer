@@ -45,6 +45,32 @@ while ($true) {
   $stall = ((Get-Date) - $lastGrow).TotalSeconds
   if ($stall -gt $age) { $age = $stall }
   $cool = ((Get-Date) - $lastRestart).TotalSeconds
+
+  # REFOCUS BEFORE RESTARTING. FH6 only accepts the virtual gamepad while it is the
+  # foreground window; when focus is stolen the game pauses, the log stops growing, and a
+  # restart does nothing about it -- the relaunch just destroys the vpad, raises a
+  # "Controller Disconnected" dialog, and costs another minute of recovery. Measured
+  # 2026-08-01: with NOBODY touching the machine for 20 minutes the farm produced 0 laps and
+  # sat stale for 708 s, purely from focus theft (the Claude desktop app and Windows
+  # notifications both do it). So try the cheap, correct remedy first, every time the log
+  # stops growing, and only escalate to a restart if focus was not the problem.
+  if ($stall -gt 45) {
+    $fz = Get-Process forzahorizon6 -ErrorAction SilentlyContinue
+    if ($fz) {
+      Add-Type -Name FzW -Namespace Wd -MemberDefinition @'
+[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h);
+[DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c);
+[DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr a, int x, int y, int cx, int cy, uint f);
+'@ -ErrorAction SilentlyContinue
+      $h = $fz.MainWindowHandle
+      [Wd.FzW]::ShowWindow($h, 9) | Out-Null
+      [Wd.FzW]::SetWindowPos($h, [IntPtr](-1), 0,0,0,0, 0x0043) | Out-Null
+      [Wd.FzW]::SetWindowPos($h, [IntPtr](-2), 0,0,0,0, 0x0043) | Out-Null
+      [Wd.FzW]::SetForegroundWindow($h) | Out-Null
+      WLog "  log stalled ${stall}s -> refocused FH6 (focus theft pauses the game)"
+    }
+  }
+
   if ($age -gt 180 -and $cool -gt 360) {
     if ($count -ge 30) { WLog "STALE ${age}s but hit 30-restart cap -> giving up (needs human)"; break }
     $count++
