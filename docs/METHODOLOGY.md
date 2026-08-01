@@ -47,6 +47,14 @@ Rules marked **(measured)** were established by a specific experiment.
     cte 0.23 m at 100% on-track **(measured 08-01)**. Always split per-lap before believing an
     aggregate got worse.
 
+14. **A carved vtrim pocket damages ~18 m UPSTREAM of itself, not just itself.** `map_w` is a
+    window-MIN over the next 18 m, so a handful of stations driven to the 0.80 floor pull the
+    target down for every station that can see them. Measured 08-01: stations 300-305 at the
+    floor dragged the target at station 294 from 217 to 119 km/h - predicted 118.9, observed
+    118.9 - and 37% of the lap ended up >10 km/h down, worth **+3.24 s**. When judging map
+    damage, look at the WINDOW-MIN, never the per-station value: at station 294 the map itself
+    still read 1.550.
+
 ## Control-law lessons (constraints on future designs)
 
 - **Compensate latency/braking with ONSET, never GAIN.** Raising `brk_ff` causes branch-chatter
