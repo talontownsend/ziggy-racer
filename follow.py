@@ -767,6 +767,27 @@ def main() -> int:
     sock.bind(("0.0.0.0", args.port))
     sock.settimeout(0.5)
     gp = vg.VX360Gamepad()
+
+    def replug_pad():
+        """Destroy and recreate the virtual pad so the game sees a fresh CONNECTION.
+
+        FH6's "Controller Disconnected / Please reconnect a controller" dialog cannot be
+        dismissed by pressing buttons on the pad it already thinks is gone -- measured
+        2026-08-01, the follower logged the same A+Enter dozens of times with no effect,
+        while a newly created pad cleared it on the first A. The dialog wants an arrival
+        event, so give it one. Rebinding the module-level `gp` is enough: every tap()
+        closure reads it through this scope.
+        """
+        nonlocal gp
+        try:
+            del gp
+        except Exception:
+            pass
+        time.sleep(1.2)                                  # let the game register the removal
+        gp = vg.VX360Gamepad()
+        time.sleep(1.2)                                  # ...and the arrival
+        return gp
+
     BTN_A = vg.XUSB_BUTTON.XUSB_GAMEPAD_A                # clutch (in race) / confirm (in menus)
     BTN_B = vg.XUSB_BUTTON.XUSB_GAMEPAD_B                # circle: back / resume race
     BTN_RB = vg.XUSB_BUTTON.XUSB_GAMEPAD_RIGHT_SHOULDER  # shift up
@@ -1115,7 +1136,7 @@ def main() -> int:
                     # post_race=True if the race clock had been running (a real race just
                     # finished) -> collect the winnings (A-through) before restarting.
                     recover_to_racing(gp, RECOVER_BTN, get_frame, fz_hwnd,
-                                      log=lambda m: print(m, flush=True),
+                                      log=lambda m: print(m, flush=True), replug=replug_pad,
                                       post_race=(race_t_last > 10.0), line=line)
                     idx = None; traveled = 0.0; launched = False     # fresh race -> reset state
                     held = False; stuck = 0; held_frames = 0
@@ -2074,7 +2095,8 @@ def main() -> int:
                     elif time.time() - freeroam_since > 6.0 and time.time() - last_recover > 10.0:
                         print("\n[afk] moving off the race corridor -> recover (free roam?)", flush=True)
                         recover_to_racing(gp, RECOVER_BTN, get_frame, fz_hwnd,
-                                          log=lambda m: print(m, flush=True), post_race=False, line=line)
+                                          log=lambda m: print(m, flush=True), post_race=False, line=line,
+                                      replug=replug_pad)
                         idx = None; traveled = 0.0; launched = False
                         held = False; stuck = 0; held_frames = 0
                         freeroam_since = 0.0; race_t_last = 0.0

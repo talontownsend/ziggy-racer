@@ -235,7 +235,8 @@ def close_map(gp, btn, hwnd=None, log=print, budget=12):
     log("[map] close-map budget exhausted")
     return False
 
-def recover_to_racing(gp, btn, get_frame, hwnd=None, log=print, budget=300, post_race=False, line=None):
+def recover_to_racing(gp, btn, get_frame, hwnd=None, log=print, budget=300, post_race=False,
+                      line=None, replug=None):
     """From any non-driving state, get back to a live race. Returns True if racing.
     post_race=True means we JUST finished a race -> press A through the winnings/accolades
     screens to COLLECT the credits before restarting (the whole point of the farm). Without
@@ -247,7 +248,7 @@ def recover_to_racing(gp, btn, get_frame, hwnd=None, log=print, budget=300, post
             gp.press_button(button=btn[name]); gp.update(); time.sleep(hold)
             gp.release_button(button=btn[name]); gp.update()
         time.sleep(after)
-    t0 = time.time(); other_runs = 0
+    t0 = time.time(); other_runs = 0; disc_runs = 0
     if post_race:
         log("[recover] post-race: will A-through to COLLECT winnings before restart")
     while time.time() - t0 < budget:
@@ -255,10 +256,32 @@ def recover_to_racing(gp, btn, get_frame, hwnd=None, log=print, budget=300, post
         # reconnect and sits ON TOP of whatever menu, eating all other inputs. Detect by
         # its green box (OCR reads the menu behind it and misses the dialog).
         if has_disconnect_dialog(hwnd):
-            log("[recover] Controller-Disconnected dialog -> A + Enter to close")
+            disc_runs += 1
+            log(f"[recover] Controller-Disconnected dialog -> A + Enter to close ({disc_runs})")
             tap("A", after=0.4); key_enter(); time.sleep(1.2)
+            # A BUTTON PRESS CANNOT FIX A DISCONNECT. Measured 2026-08-01: the follower sat on
+            # this dialog indefinitely, logging the same A+Enter dozens of times, while a
+            # FRESHLY CREATED vpad cleared it on the first A. The dialog is not asking for a
+            # keypress, it is asking for a controller CONNECTION EVENT ("Please reconnect a
+            # controller"). Our pad still exists, so pressing its buttons proves nothing to the
+            # game. Re-plugging it is the actual remedy: destroy and recreate, which raises a
+            # fresh XUSB arrival the game notices. Only after a few failed taps, since the
+            # normal case (dialog appears while our pad is healthy) does clear with A.
+            if disc_runs in (4, 10, 20) and replug is not None:
+                log("[recover] dialog persists -> RE-PLUGGING the virtual pad (connection event)")
+                try:
+                    newgp = replug()
+                    # REBIND, or this is pointless: gp is a parameter, so tap() would keep
+                    # driving the old dead pad while the freshly plugged one sat idle.
+                    if newgp is not None:
+                        gp = newgp
+                    time.sleep(2.0)
+                    tap("A", after=0.6); key_enter()
+                except Exception as e:                      # pragma: no cover
+                    log(f"[recover] replug failed: {type(e).__name__}: {e}")
             other_runs = 0
             continue
+        disc_runs = 0
         if racing(get_frame, hwnd):
             log("[recover] racing confirmed (lap HUD present)")
             return True
