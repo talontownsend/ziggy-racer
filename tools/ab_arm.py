@@ -210,7 +210,16 @@ def main():
                 # n>=12, not 25: a failing arm produces FEWER laps per window (incidents cost
                 # time), so a high lap-count gate can never fire on exactly the failure mode
                 # it is meant to catch.
-                if m15["n_laps"] >= 12 and m15["med"] and m15["med"] > a.abort_med:
+                #
+                # ...but ONLY AFTER EQUILIBRATION. The transient right after arming is expected
+                # to be worse -- that is the entire reason an equilibration window exists -- so
+                # judging the median during it aborts good arms on the very behaviour we chose
+                # to wait out. Measured 2026-08-01: all three arms of a ladder aborted at t+3min
+                # of an 18-minute equilibration, so the ladder finished in 27 minutes having
+                # measured precisely nothing. The stall abort below stays armed throughout,
+                # because a car that is crashing is never worth waiting out.
+                if (t_score_from is not None and m15["n_laps"] >= 12
+                        and m15["med"] and m15["med"] > a.abort_med):
                     aborted = f"ABORT: trailing median {m15['med']:.2f} over {m15['n_laps']} laps (limit {a.abort_med})"
                     break
             print(
