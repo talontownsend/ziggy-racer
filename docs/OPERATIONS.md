@@ -48,6 +48,17 @@ Key groups (testing rules for these live in METHODOLOGY.md):
 5. ≥30 min re-equilibration before scoring; 50+ laps; ABAB washouts; session-aware scans.
 6. Revert, restore learning rates, verify racing before walking away.
 
+## 4a. Snapshot the learner correctly
+
+`recordings/vtrim_map.npz` is an **OUTPUT** - the follower recomputes it at startup from
+`vt_base = vnet.forward(features)` plus `vdelta` and overwrites the file. Restoring it does
+nothing. Back up and restore **`vtrim_net.npz` AND `vtrim_delta.npz` together**; the net absorbs
+every credit and cut too, and generalizes damage across similar stations.
+
+```bash
+cp recordings/vtrim_net.npz recordings/vtrim_delta.npz recordings/snapshots/
+```
+
 ## 4b. After ANY file move or reorganisation
 ```bash
 python tools/_selftest_imports.py
