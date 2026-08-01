@@ -835,9 +835,9 @@ def main() -> int:
                 tap(_km[_ch]); time.sleep(1.0)
         print("driving. Alt-tab away or Ctrl+C to stop.\n")
     else:
-        print(">>> driving starts in 4 s (alt-tab into FH6 if not focused)...")
+        print(">>> driving starts in 4 s (alt-tab into FH6 if not focused)...", flush=True)
         for k in range(4, 0, -1):
-            print(f"  {k}...")
+            print(f"  {k}...", flush=True)
             time.sleep(1.0)
         print("driving. Alt-tab away or Ctrl+C to stop.\n")
 

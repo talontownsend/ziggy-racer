@@ -55,6 +55,18 @@ while ($true) {
   # notifications both do it). So try the cheap, correct remedy first, every time the log
   # stops growing, and only escalate to a restart if focus was not the problem.
   if ($stall -gt 45) {
+    # THE FOCUS THIEF. "Windows Input Experience" (TextInputHost.exe) repeatedly grabs the
+    # foreground on this machine, which pauses FH6, stops the log, and makes every refocus
+    # attempt fail -- SetForegroundWindow is refused while it owns the foreground, so even
+    # the AttachThreadInput workaround loses. Measured 2026-08-01: the farm produced ZERO
+    # laps across several hours with nobody touching the machine, and refocus started
+    # succeeding on attempt 1 the moment this process was ended. It is an on-demand UWP host
+    # (touch keyboard / emoji panel); an AFK racing rig never needs it and Windows restarts
+    # it automatically if something does.
+    Get-Process TextInputHost -ErrorAction SilentlyContinue | ForEach-Object {
+      Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
+      WLog "  ended TextInputHost $($_.Id) (it was holding the foreground)"
+    }
     $fz = Get-Process forzahorizon6 -ErrorAction SilentlyContinue
     if ($fz) {
       Add-Type -Name FzW -Namespace Wd -MemberDefinition @'
