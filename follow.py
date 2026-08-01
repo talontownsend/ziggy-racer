@@ -999,7 +999,6 @@ def main() -> int:
     stuck_off_since = 0.0; last_reset = 0.0      # off-track wedge -> Reset Car Position
     stuck_slow_since = 0.0                        # launched but crawling ANYWHERE -> Reset Car Position
     freeroam_since = 0.0                          # MOVING off-corridor a while -> free roam? recover
-    freeroam_pos_since = 0.0                      # race_position==0 while driving -> free roam
     reversing = False; reverse_until = 0.0; reverse_from = None   # REVERSE-unstuck maneuver
     on_track = False       # init for first-tick reads (bc blend gate reads prev frame's value)
     wedge_cut_ticks = 0; wedge_cut_done = False   # wedge-cut episode state (fires un-launched)
