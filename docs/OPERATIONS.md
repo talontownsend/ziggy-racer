@@ -48,6 +48,14 @@ Key groups (testing rules for these live in METHODOLOGY.md):
 5. ≥30 min re-equilibration before scoring; 50+ laps; ABAB washouts; session-aware scans.
 6. Revert, restore learning rates, verify racing before walking away.
 
+## 4b. After ANY file move or reorganisation
+```bash
+python tools/_selftest_imports.py
+```
+AST-based, so it catches imports hidden by indentation or `try/except`. A `[SILENT]` result is
+the dangerous class: the program keeps running with a feature invisibly disabled. This is
+exactly how the recovery went blind and swapped the car on 07-29.
+
 ## 5. Post-game-update checklist
 1. Telemetry: packet rate + column count parse (71.4 Hz, 57 cols).
 2. Recovery: does it reach "racing confirmed"? (new screens usually yield to B+Esc ladder).
@@ -66,3 +74,7 @@ Key groups (testing rules for these live in METHODOLOGY.md):
 | Wedge storms at one corner | arrival too hot for conditions | wedge-cut now carves the approach automatically; if it persists, check for a latency/physics shift (§5) |
 | Full throttle + idle RPM | vpad not reaching game (ghost pad / Steam Input) | kill follower by PID, restart Forza (memory: fh6-throttle-not-reaching) |
 | Farm dead, watchdog gave up | 30-restart cap hit | human: fix game state, restart watchdog |
+| Startup prints "RECOVERY IS BLIND" | OCR stack broken (winshot/winocr not importable) | menu nav self-disables; run `python tools/_selftest_imports.py`, restore the missing module. Do NOT ignore: blind recovery is how the car got swapped on 07-29 |
+| Wrong car in the race | an event restart swapped it | the car guard freezes learning automatically (`identity.max_rpm` in vehicle_spec.json). Put the right car back; restore the map from `recordings/snapshots/` if learning ran |
+| Bot laps happily but scores nothing | free roam (same roads as the race line) | since 07-30 the `race_position<1` detector restarts the event after 20 s; if it does not fire, check the startup vision line |
+| Follower stops logging with no error | FH6 lost foreground (it only drives when focused) | re-focus the game; the watchdog's no-growth check restarts it |
