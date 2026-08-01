@@ -762,6 +762,27 @@ def main() -> int:
         except Exception:
             pass
 
+    # SINGLE-INSTANCE LOCK. Two followers both drive the car through separate virtual pads and
+    # both write follow_log.csv: the inputs fight, the log interleaves into corruption
+    # (_csv.Error: field larger than field limit), and lap times degrade for no visible reason.
+    # It happens easily -- hand-launch one while the watchdog owns another. The telemetry port
+    # does NOT self-police this, because SO_REUSEADDR below lets the duplicate bind
+    # successfully and then quietly receive nothing useful. Measured 2026-08-01: a second
+    # follower ran for an hour under a different interpreter before a process listing caught it.
+    try:
+        _lock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        _lock.bind(("127.0.0.1", 47771))
+        _lock.listen(1)
+    except OSError:
+        bar = "=" * 78
+        print(bar, flush=True)
+        print("*** ANOTHER FOLLOWER IS ALREADY RUNNING (single-instance lock on", flush=True)
+        print("    127.0.0.1:47771 is held). Two followers fight over the car and", flush=True)
+        print("    corrupt follow_log.csv. Refusing to start. Stop the watchdog, kill", flush=True)
+        print("    every follow.py, then start exactly one. ***", flush=True)
+        print(bar, flush=True)
+        return 2
+
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(("0.0.0.0", args.port))
