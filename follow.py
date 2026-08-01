@@ -41,13 +41,39 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fh6_telemetry import parse_packet
 try:
     from afk_recover import (recover_to_racing, reset_car, close_map, ocr_text,
-                             has_disconnect_dialog, screen_state, key_enter)
+                             has_disconnect_dialog, screen_state, key_enter,
+                             ocr_available, ocr_selftest)
 except Exception:
     import traceback
     print("[afk] WARNING: afk_recover import failed -- OCR self-recovery DISABLED:\n"
           + traceback.format_exc(), flush=True)
     recover_to_racing = reset_car = close_map = ocr_text = None
     has_disconnect_dialog = screen_state = key_enter = None
+    ocr_available = ocr_selftest = None
+
+
+def _recovery_selfcheck():
+    """Fail LOUD when the recovery stack cannot see. Silent degradation is what made the
+    07-29 car swap possible: winshot.py moved to attic/, its import was swallowed by a
+    try/except, ocr_text() returned "" forever, and every OCR guard quietly evaluated to
+    False while recovery kept pressing buttons blind. Nothing in the logs looked wrong.
+    Startup now states plainly whether the eyes work."""
+    if ocr_selftest is None:
+        print("=" * 78 + "\n[afk] *** RECOVERY DISABLED: afk_recover did not import. The bot cannot\n"
+              "      recover from menus and will NOT navigate them blind. ***\n" + "=" * 78,
+              flush=True)
+        return False
+    ok, detail = ocr_selftest()
+    if ok:
+        print(f"[afk] recovery vision OK ({detail}) -- menu navigation armed", flush=True)
+    else:
+        print("=" * 78 + f"\n[afk] *** RECOVERY IS BLIND: {detail}\n"
+              "      Every OCR guard (STORE, CARS/garage, race-HUD, disconnect, loading)\n"
+              "      is inoperative. Menu navigation is DISABLED so it cannot swap the car\n"
+              "      or open a purchase overlay. Driving and reset-car still work.\n"
+              "      Fix: ensure winshot.py is importable and winocr is installed. ***\n"
+              + "=" * 78, flush=True)
+    return ok
 from racing_line import menger_curvature
 
 user32 = ctypes.windll.user32
@@ -507,6 +533,7 @@ def main() -> int:
     k_counter = args.k_counter; r_thr = args.r_thr          # point #2 (counter-steer)
     understeer_gain = args.understeer_gain; understeer_thr = args.understeer_thr
     r_meas_f = 0.0                          # low-passed measured yaw rate
+    _recovery_selfcheck()
     print(f"local planner: {'OFF (raw-line pursuit)' if planner is None else 'ON (Frenet merge-path, a_lat=%.0f)' % args.planner_alat}")
 
     # RESIDUAL CORRECTOR NET (residual policy learning): a small learned trim ON TOP of the
@@ -972,6 +999,7 @@ def main() -> int:
     stuck_off_since = 0.0; last_reset = 0.0      # off-track wedge -> Reset Car Position
     stuck_slow_since = 0.0                        # launched but crawling ANYWHERE -> Reset Car Position
     freeroam_since = 0.0                          # MOVING off-corridor a while -> free roam? recover
+    freeroam_pos_since = 0.0                      # race_position==0 while driving -> free roam
     reversing = False; reverse_until = 0.0; reverse_from = None   # REVERSE-unstuck maneuver
     on_track = False       # init for first-tick reads (bc blend gate reads prev frame's value)
     wedge_cut_ticks = 0; wedge_cut_done = False   # wedge-cut episode state (fires un-launched)
@@ -2012,6 +2040,33 @@ def main() -> int:
             # drive itself out (wall/ditch); the stuck-guard's hold just cycles. So after a
             # few seconds wedged off-track, Reset Car Position via the pause menu, then
             # re-localize and re-arm the launch guard. ---
+            # FREE ROAM WHILE DRIVING PERFECTLY WELL. The off-corridor test below cannot
+            # catch this: free roam runs on the SAME roads, so the bot laps the racing line
+            # happily, on_track the whole way, and never trips it. race_position is the one
+            # honest signal -- 0 in free roam, >=1 in a race (is_race_on AND the race clock
+            # are 1 in BOTH). 07-29: a completed 50-lap event dropped the car to free roam
+            # and the farm drove laps there for hours, learning nothing and scoring nothing,
+            # because every existing trigger was satisfied. Requires MOVING, so a stationary
+            # pre-GO grid (race_position 0 until the flag) cannot trip it; recovery's own
+            # lap-HUD guard handles that case anyway.
+            if (args.afk and recover_to_racing is not None and f.race_position < 1
+                    and spd * 3.6 > 25.0):
+                if freeroam_pos_since == 0.0:
+                    freeroam_pos_since = time.time()
+                elif (time.time() - freeroam_pos_since > 20.0
+                      and time.time() - last_recover > 30.0):
+                    print("\n[afk] driving with race_position=0 for 20 s -> FREE ROAM, "
+                          "restarting the event", flush=True)
+                    recover_to_racing(gp, RECOVER_BTN, get_frame, fz_hwnd,
+                                      log=lambda m: print(m, flush=True), post_race=False, line=line)
+                    idx = None; traveled = 0.0; launched = False
+                    held = False; stuck = 0; held_frames = 0
+                    freeroam_pos_since = 0.0; freeroam_since = 0.0; race_t_last = 0.0
+                    racing_seen = time.time(); last_recover = time.time()
+                    neutral(); continue
+            elif f.race_position >= 1:
+                freeroam_pos_since = 0.0
+
             if args.afk and reset_car is not None:   # (no 'launched' gate: a car wedged off
                 if (not on_track) and spd * 3.6 < 4.0:  # the track never launches; grid is on-track)
                     freeroam_since = 0.0

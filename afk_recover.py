@@ -29,6 +29,50 @@ try:
 except Exception:
     grab_window = find_forza_window = None
 
+
+# Screens that mean "we are in the car/garage flow". Deliberately excludes bare "garage":
+# Creative Hub shows a legitimate "Garage Layouts" tile and matching it blocked the nav.
+CAR_SCREEN_KEYS = ("my cars", "car collection", "buy cars", "autoshow", "rent a car",
+                   "choose a car", "car mastery", "select a car", "your garage")
+
+
+def ocr_available():
+    """True only when we can actually SEE the screen.
+
+    2026-07-29 incident: winshot.py was moved to attic/ by a repo reorganisation. This
+    import silently set grab_window=None, so ocr_text() returned "" forever, so EVERY
+    OCR guard below evaluated against an empty string and never fired -- the STORE
+    guard, the race-HUD grid guard, the disconnect-dialog check, the pause/loading
+    detectors, all of them. Recovery then ran its fixed menu button sequence completely
+    blind for hours, and one of those blind runs walked into the CARS tab and swapped
+    the car out from under a calibrated bot. Nothing in the logs said anything was
+    wrong; every screen simply read "other".
+
+    So: blindness is now an explicit, queryable state. A recovery step that can move
+    PERSISTENT game state (garage, store, blueprint selection) must call this first and
+    refuse to act when it returns False. Reset-car and A/B taps are still safe blind --
+    they cannot change what car you own.
+    """
+    return winocr is not None and grab_window is not None and find_forza_window is not None
+
+
+def ocr_selftest(log=print):
+    """Verify end-to-end that we can read the live window. Returns (ok, detail)."""
+    if not ocr_available():
+        missing = [n for n, v in (("winocr", winocr), ("winshot.grab_window", grab_window),
+                                  ("winshot.find_forza_window", find_forza_window)) if v is None]
+        return False, "missing: " + ", ".join(missing)
+    try:
+        hwnd = find_forza_window()
+        if not hwnd:
+            return False, "Forza window not found"
+        txt = ocr_text(hwnd)
+        if not txt:
+            return False, "OCR returned no text (window occluded or capture blocked?)"
+        return True, f"{len(txt)} chars"
+    except Exception as e:                                  # pragma: no cover
+        return False, f"exception: {type(e).__name__}: {e}"
+
 # ---- keyboard Enter (some confirm prompts flap to wanting Enter, not vpad A) ----
 _user32 = ctypes.WinDLL("user32", use_last_error=True)
 _VK_RETURN = 0x0D; _KEYUP = 0x0002
@@ -281,20 +325,61 @@ def recover_to_racing(gp, btn, get_frame, hwnd=None, log=print, budget=300, post
                 other_runs += 1
                 log(f"[recover] free-roam confirm {other_runs}/4")
                 if other_runs >= 4:
+                    # BLINDNESS GATE. This is the ONE branch that can change persistent
+                    # game state (it walks the garage/store/blueprint menus). If we cannot
+                    # read the screen we must not press anything here -- see ocr_available().
+                    if not ocr_available():
+                        log("[recover] *** OCR UNAVAILABLE -- refusing to navigate menus blind. "
+                            "The EventLab nav can land on CARS/STORE and change the car or open "
+                            "a purchase overlay. Fix the OCR stack (winshot/winocr); a human must "
+                            "restart the event. ***")
+                        other_runs = 0
+                        time.sleep(30.0)
+                        continue
                     log("[recover] stable free roam -> opening EventLab")
                     time.sleep(1.5)                      # extra settle before touching anything
                     tap("START", after=1.6)
                     for _ in range(4):
                         tap("RB", after=0.5)
-                    # HARD GUARD: never A into the STORE -- a paid item opens the Steam overlay.
-                    # If the tabs landed on STORE (wrong opening tab / overshoot), back out.
-                    if any(k in ocr_text(hwnd) for k in ("buy it now", "premium upgrade",
-                                                          "car pass", "car packs", "treasure map")):
+
+                    # CLOSED-LOOP CHECK, not an open-loop sequence. Every press below is
+                    # conditional on the screen actually being where we think it is. The
+                    # old code fired START/RB*4/A/Dright/A/A blind: any perturbation (a
+                    # Controller-Disconnected dialog from a follower restart destroying its
+                    # vpad, a slow menu, a notification, a different opening tab) shifted
+                    # every later press onto an unintended target. CARS sits two tabs from
+                    # CREATIVE HUB and the garage is ~2 A-presses deep, so a car swap is
+                    # reachable from a single missed frame.
+                    scr = ocr_text(hwnd)
+                    if any(k in scr for k in ("buy it now", "premium upgrade", "car pass",
+                                              "car packs", "treasure map")):
                         log("[recover] nav landed on STORE -> aborting (B+Esc), will retry")
+                        tap("B", after=0.4); key_esc(); time.sleep(1.0); other_runs = 0
+                        continue
+                    # HARD GUARD: never A into the garage. Entering CARS and confirming is
+                    # exactly how the 07-29 car swap happened, and a wrong car silently
+                    # invalidates every calibrated map the bot owns. NOTE: do NOT match bare
+                    # "garage" -- Creative Hub legitimately shows a "Garage Layouts" tile and
+                    # that false-positived on the real screen during testing.
+                    if any(k in scr for k in CAR_SCREEN_KEYS):
+                        log("[recover] nav landed on a CAR screen -> aborting (B+Esc), will retry")
+                        tap("B", after=0.4); key_esc(); time.sleep(1.0); other_runs = 0
+                        continue
+                    # POSITIVE confirmation that we are on Creative Hub with EventLab in view.
+                    # Match the tile's SUBTITLE, not its name: live OCR renders "EventLab" as
+                    # "eventab2" (the l is dropped), so keying on "eventlab" never confirms.
+                    if not ("creative hub" in scr and "browse events" in scr):
+                        log(f"[recover] expected Creative Hub + EventLab, screen does not confirm "
+                            f"(len={len(scr)}) -> backing out instead of pressing A")
                         tap("B", after=0.4); key_esc(); time.sleep(1.0); other_runs = 0
                         continue
                     tap("A", after=1.6)                  # open EventLab
                     tap("Dright", after=0.9)             # Play Event -> My Events
+                    scr = ocr_text(hwnd)
+                    if any(k in scr for k in CAR_SCREEN_KEYS + ("buy it now",)):
+                        log("[recover] post-EventLab screen looks like CARS/STORE -> backing out")
+                        tap("B", after=0.4); key_esc(); time.sleep(1.0); other_runs = 0
+                        continue
                     tap("A", after=2.0)                  # open My Events
                     tap("A", after=2.0)                  # select blueprint -> Choose Race Type
                     other_runs = 0
