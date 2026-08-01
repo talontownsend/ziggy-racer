@@ -909,7 +909,8 @@ def main() -> int:
 
     # --- AFK self-recovery state (only used with --afk) ---
     race_t_last = 0.0; racing_seen = time.time(); last_recover = 0.0; last_map_check = 0.0
-    no_telem_t0 = None; last_blind_kick = 0.0      # no-telemetry streak / last-resort kick
+    no_telem_t0 = None
+    last_replug = 0.0; last_blind_kick = 0.0      # no-telemetry streak / last-resort kick
     prev_tgt = None; desc_f = 0.0; brk_ff = 1.0   # brake feedforward (gain tunable; 0 disables)
     bla_tau = 0.0      # BRAKE LOOKAHEAD (s): engage/scale braking against the target extrapolated
                        # bla_tau seconds ahead (err_b = err - desc_f*tau). Fixes the systematic
@@ -1051,6 +1052,25 @@ def main() -> int:
                 _now_nt = time.time()
                 if no_telem_t0 is None:
                     no_telem_t0 = _now_nt
+                # PRE-TELEMETRY DEADLOCK BREAKER, deliberately NOT gated on foreground.
+                # After a follower restart the old vpad dies, FH6 raises "Controller
+                # Disconnected", and that dialog stops the Data Out stream -- so the packet
+                # loop never runs and every other unstick below is unreachable. Worse, those
+                # unsticks all require Forza to be FOREGROUND, and focus is exactly what is
+                # contested in this state (2026-08-01: the farm sat here for 40 minutes while
+                # the watchdog refocused every 30 s and the follower printed nothing at all).
+                # A pad ARRIVAL is delivered regardless of focus, and a fresh arrival is the
+                # one thing that actually answers "please reconnect a controller" -- pressing
+                # buttons on a pad the game has already written off does nothing.
+                if _now_nt - no_telem_t0 > 25.0 and _now_nt - last_replug > 45.0:
+                    last_replug = _now_nt
+                    print(f"\n[afk] no telemetry {_now_nt - no_telem_t0:.0f}s -> RE-PLUGGING "
+                          f"the vpad (fresh connection event; works without focus)", flush=True)
+                    try:
+                        replug_pad()
+                        tap(BTN_A); key_enter()
+                    except Exception as _e:
+                        print(f"[afk] replug failed: {type(_e).__name__}: {_e}", flush=True)
                 # NO-TELEMETRY unstick: FH6 pauses the Data Out stream whenever the game is
                 # paused -- the Controller-Disconnected dialog (vpad respawn after a follower
                 # restart), the full-screen map, or the pause menu. The packet-loop recovery
