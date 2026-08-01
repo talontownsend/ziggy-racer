@@ -137,6 +137,7 @@ measurement rather than argument:
 | off-line speed governor | no: cte is *better* now (0.71 m vs 1.09 m median) |
 | `plan_degraded` clamp | no: 0.13% of ticks now vs 4.31% at baseline |
 | learner ratcheting down | no: 50-lap frozen window scored 33.37 vs 33.36 with learning on |
+| two followers fighting | no - and this was my error: the follower normally shows as TWO PIDs (myenv launcher + Python312 child, same parentage, same creation second). I killed a healthy child believing it was a duplicate, and briefly shipped a single-instance lock on that misreading. Both reverted. |
 
 The one window that did reach 32.32 (47 laps, 02:19-02:49) has not reproduced, on the same map
 and the same config. I have no explanation for it and am not going to invent one.
