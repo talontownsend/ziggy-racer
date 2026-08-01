@@ -63,17 +63,31 @@ too. Restoring the pre-night delta recovered 0.64 s and cut the damaged stations
 
 ---
 
-## The one scored result
+## Results: both pedal-mute hypotheses are refuted
 
 With the farm finally stable, the baseline calibrated cleanly:
 
-    50 laps   med 32.32   p25 31.91   p75 32.79   best 31.44   stalls 0
+| config | laps | med | best | p25-p75 | stalls |
+|---|---|---|---|---|---|
+| **baseline** | 50 | **32.32** | 31.44 | 31.91-32.79 | 0 |
+| `slip_target` 1.35 | - | - | - | - | **4 in 15 min -> aborted** |
+| `brk_lock_slip` 3.0 | 50 | **33.44** | 33.10 | 33.29-33.62 | 0 |
 
-**`slip_target` 1.05 -> 1.35: REJECTED.** It took the car from **0 stalls in 50 laps to 4 stalls
-in 15 minutes** and self-aborted. Note the median never degraded (32.90, inside the baseline
-band) - the failure mode is *instability*, not slowness, which matches the documented 07-03
-power-oversteer precedent exactly. The "tyres peak at slip 1.18-1.80" analysis is probably right
-about the tyres and wrong about the consequence: the extra slip goes into rotation, not drive.
+**`slip_target` 1.05 -> 1.35: REJECTED.** Took the car from **0 stalls in 50 laps to 4 stalls in
+15 minutes** and self-aborted. The median never degraded (32.90, inside the baseline band), so
+the failure mode is *instability*, not slowness - matching the documented 07-03 power-oversteer
+precedent exactly. The "tyres peak at slip 1.18-1.80" analysis is probably right about the tyres
+and wrong about the consequence: the extra slip goes into rotation, not drive.
+
+**`brk_lock_slip` 2.0 -> 3.0: REJECTED, cleanly.** +1.12 s slower over 50 scored laps with
+**non-overlapping IQRs** (33.29-33.62 vs 31.91-32.79) and zero stalls either way. Stable but
+slower - deeper brake slip lengthens the stop rather than shortening it.
+
+**What this means.** The six-lens analysis argued both derates were costing time because their
+thresholds sit below where the tyres peak. The experiments say the opposite: loosening either
+one costs time. Like the human speed ceiling before them, these derates are **load-bearing**,
+not decoration. That is now two independent cases of the same lesson - a limiter that looks
+conservative on paper is often doing real work the analysis cannot see.
 
 ---
 
