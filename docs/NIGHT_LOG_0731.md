@@ -72,6 +72,7 @@ With the farm finally stable, the baseline calibrated cleanly:
 | **baseline** | 50 | **32.32** | 31.44 | 31.91-32.79 | 0 |
 | `slip_target` 1.35 | - | - | - | - | **4 in 15 min -> aborted** |
 | `brk_lock_slip` 3.0 | 50 | **33.44** | 33.10 | 33.29-33.62 | 0 |
+| `vown_w` 1.0 (raise-only) | 50 | **33.22** | 33.01 | 33.15-33.30 | 0 |
 
 **`slip_target` 1.05 -> 1.35: REJECTED.** Took the car from **0 stalls in 50 laps to 4 stalls in
 15 minutes** and self-aborted. The median never degraded (32.90, inside the baseline band), so
@@ -83,11 +84,22 @@ and wrong about the consequence: the extra slip goes into rotation, not drive.
 **non-overlapping IQRs** (33.29-33.62 vs 31.91-32.79) and zero stalls either way. Stable but
 slower - deeper brake slip lengthens the stop rather than shortening it.
 
+**`vown_w` 1.0 (self-derived speed profile): REJECTED.** +0.90 s over 50 scored laps, again with
+non-overlapping IQRs and zero stalls. Worth noting against the calibrated lap model, which
+predicted this arm would **gain** 0.235 s: it was wrong in sign. The model is trustworthy for
+"what does the constraint set imply" and not for "what will this control change do" - it has no
+representation of how the tracker behaves when targets move.
+
 **What this means.** The six-lens analysis argued both derates were costing time because their
 thresholds sit below where the tyres peak. The experiments say the opposite: loosening either
 one costs time. Like the human speed ceiling before them, these derates are **load-bearing**,
-not decoration. That is now two independent cases of the same lesson - a limiter that looks
-conservative on paper is often doing real work the analysis cannot see.
+not decoration.
+
+That is now **three for three**: every proposed relaxation of a limiter this week - the human
+speed ceiling, the throttle slip mute, the brake anti-lock threshold - has measured worse in the
+car than on paper. The pattern is consistent enough to be a working prior: on this vehicle the
+conservative-looking limits are doing real work that static analysis of the tyre data does not
+capture, and the remaining time is not sitting behind them.
 
 ---
 
