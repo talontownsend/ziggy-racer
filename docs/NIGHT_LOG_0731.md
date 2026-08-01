@@ -119,15 +119,37 @@ distribution was min 31.44 / med 32.32. Checked before it reached you.
 
 ---
 
-## Where the remaining gap is
+## The gap to 07-29, and what I could NOT establish
 
-After the learner restore the gap to the 07-29 reference (29.72) is **+2.51 s**, and it is no
-longer a target problem - most zones now command *identical* targets and the car simply arrives
-slower. The loss cascades from about s748 into s858, where the car arrives at **79.6 km/h against
-a 136 km/h target**, part-throttle and not braking. That is an execution/cascade problem and
-needs a fresh session rather than the end of this one.
+The farm now runs **33.3-33.4 median with zero stalls** and an exceptionally tight spread
+(IQR ~0.15 s). It is stable and self-healing. But it is **~3.5 s off the 29.72 s** the same
+config produced on 07-29, and **I did not find the cause.** What I ruled out, each by
+measurement rather than argument:
 
-## State
+| candidate | verdict |
+|---|---|
+| learned map carved down | **partly true** - fixing it recovered 0.64 s, but 2.5 s remained |
+| different event / route | no: driven distance 1088.9 m vs 1093.5 m |
+| car swapped again | no: max_rpm 8000 throughout |
+| different gearing / tune | no: km/h per 1000 rpm identical per gear (1.00 ratios) |
+| engine or grip degraded | no: full-throttle acceleration is *higher* at low speed |
+| config drift | no: tune.json differs only by the new keys, all at legacy defaults |
+| off-line speed governor | no: cte is *better* now (0.71 m vs 1.09 m median) |
+| `plan_degraded` clamp | no: 0.13% of ticks now vs 4.31% at baseline |
+| learner ratcheting down | no: 50-lap frozen window scored 33.37 vs 33.36 with learning on |
 
-Farm running, Tacoma, learning **frozen** (correct A/B condition), all experimental keys at
-legacy defaults, learner snapshotted to `recordings/snapshots/*_arm0801.npz`.
+The one window that did reach 32.32 (47 laps, 02:19-02:49) has not reproduced, on the same map
+and the same config. I have no explanation for it and am not going to invent one.
+
+**Where the loss physically sits:** most zones now command *identical* targets to 07-29 and the
+car simply arrives slower. It cascades - by s858 the car is at **79.6 km/h against a 136 km/h
+target**, part-throttle, not braking, having already lost time from about s748. That is an
+execution problem, and it is the right place for the next session to start.
+
+## State at handoff
+
+Farm running unattended, Tacoma confirmed, learning **on at normal rates** (frozen vs on
+measured identical, so there is no reason to leave it off), all experimental keys at legacy
+defaults, learner snapshotted to `recordings/snapshots/*_arm0801.npz`. The watchdog now ends
+TextInputHost, refocuses, and re-plugs the pad on its own - it has been self-healing for the
+last several hours without help.
