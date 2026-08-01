@@ -56,22 +56,35 @@ def ocr_available():
     return winocr is not None and grab_window is not None and find_forza_window is not None
 
 
-def ocr_selftest(log=print):
-    """Verify end-to-end that we can read the live window. Returns (ok, detail)."""
+def ocr_selftest(log=print, tries=6, gap=2.0):
+    """Verify end-to-end that we can read the live window. Returns (ok, detail).
+
+    RETRIES, because a single sample is not evidence. At follower startup the game window
+    is frequently still occluded/minimising, so a one-shot check reported "RECOVERY IS
+    BLIND" while the OCR stack was perfectly healthy -- a false alarm that would send the
+    next person debugging the wrong thing. Missing imports are a permanent condition and
+    still fail immediately; only the "no text" case is worth re-sampling.
+    """
     if not ocr_available():
         missing = [n for n, v in (("winocr", winocr), ("winshot.grab_window", grab_window),
                                   ("winshot.find_forza_window", find_forza_window)) if v is None]
         return False, "missing: " + ", ".join(missing)
-    try:
-        hwnd = find_forza_window()
-        if not hwnd:
-            return False, "Forza window not found"
-        txt = ocr_text(hwnd)
-        if not txt:
-            return False, "OCR returned no text (window occluded or capture blocked?)"
-        return True, f"{len(txt)} chars"
-    except Exception as e:                                  # pragma: no cover
-        return False, f"exception: {type(e).__name__}: {e}"
+    detail = "no attempt"
+    for i in range(max(1, tries)):
+        try:
+            hwnd = find_forza_window()
+            if not hwnd:
+                detail = "Forza window not found"
+            else:
+                txt = ocr_text(hwnd)
+                if txt:
+                    return True, f"{len(txt)} chars" + (f" (after {i + 1} tries)" if i else "")
+                detail = "OCR returned no text (window occluded or capture blocked?)"
+        except Exception as e:                              # pragma: no cover
+            detail = f"exception: {type(e).__name__}: {e}"
+        if i < tries - 1:
+            time.sleep(gap)
+    return False, detail + f" [{tries} tries]"
 
 # ---- keyboard Enter (some confirm prompts flap to wanting Enter, not vpad A) ----
 _user32 = ctypes.WinDLL("user32", use_last_error=True)
