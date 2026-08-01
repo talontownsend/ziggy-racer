@@ -1103,7 +1103,13 @@ def main() -> int:
             # of speed, so a car DRIVING in free roam is caught (the old speed<20 guard missed it).
             # Mid-race race_position stays >=1 so this never false-fires into the STORE nav; a
             # genuinely stuck car IN-race is handled by the main loop's reverse-unstuck/reset.
-            if (f.race_position < 1) and (now_t - racing_seen > 3.0):
+            # ...but NOT while a Reset Car Position is settling. The game reports
+            # race_position 0 for ~4-5 s across a reset, which is longer than this 3 s window,
+            # so every wedge-reset cascaded into a full menu recovery: measured 07-31, three
+            # resets produced six spurious recoveries ("post-race: collect winnings" on a race
+            # that was still running), and lap median went 29.7 -> 32.8 purely from the lost
+            # time. Lap numbers were continuous across all of it, proving the race never ended.
+            if (f.race_position < 1) and (now_t - racing_seen > 3.0) and (now_t - last_reset > 12.0):
                 neutral()
                 if args.afk and recover_to_racing is not None and now_t - last_recover > 6.0:
                     print("\n[afk] not racing -> self-recovering to a live race ...", flush=True)
@@ -2040,32 +2046,11 @@ def main() -> int:
             # drive itself out (wall/ditch); the stuck-guard's hold just cycles. So after a
             # few seconds wedged off-track, Reset Car Position via the pause menu, then
             # re-localize and re-arm the launch guard. ---
-            # FREE ROAM WHILE DRIVING PERFECTLY WELL. The off-corridor test below cannot
-            # catch this: free roam runs on the SAME roads, so the bot laps the racing line
-            # happily, on_track the whole way, and never trips it. race_position is the one
-            # honest signal -- 0 in free roam, >=1 in a race (is_race_on AND the race clock
-            # are 1 in BOTH). 07-29: a completed 50-lap event dropped the car to free roam
-            # and the farm drove laps there for hours, learning nothing and scoring nothing,
-            # because every existing trigger was satisfied. Requires MOVING, so a stationary
-            # pre-GO grid (race_position 0 until the flag) cannot trip it; recovery's own
-            # lap-HUD guard handles that case anyway.
-            if (args.afk and recover_to_racing is not None and f.race_position < 1
-                    and spd * 3.6 > 25.0):
-                if freeroam_pos_since == 0.0:
-                    freeroam_pos_since = time.time()
-                elif (time.time() - freeroam_pos_since > 20.0
-                      and time.time() - last_recover > 30.0):
-                    print("\n[afk] driving with race_position=0 for 20 s -> FREE ROAM, "
-                          "restarting the event", flush=True)
-                    recover_to_racing(gp, RECOVER_BTN, get_frame, fz_hwnd,
-                                      log=lambda m: print(m, flush=True), post_race=False, line=line)
-                    idx = None; traveled = 0.0; launched = False
-                    held = False; stuck = 0; held_frames = 0
-                    freeroam_pos_since = 0.0; freeroam_since = 0.0; race_t_last = 0.0
-                    racing_seen = time.time(); last_recover = time.time()
-                    neutral(); continue
-            elif f.race_position >= 1:
-                freeroam_pos_since = 0.0
+            # (A race_position-based free-roam trigger already exists at the top of the loop --
+            # see "not racing -> self-recovering". A second one added here on 07-30 was
+            # REDUNDANT and removed: last night's failure was never a missing trigger, it was
+            # that blind recovery could not SUCCEED once winshot.py went missing. Two triggers
+            # for one condition only produce double-recovery.)
 
             if args.afk and reset_car is not None:   # (no 'launched' gate: a car wedged off
                 if (not on_track) and spd * 3.6 < 4.0:  # the track never launches; grid is on-track)
