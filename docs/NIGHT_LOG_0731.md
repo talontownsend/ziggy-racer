@@ -1,9 +1,9 @@
 # Night log, 2026-07-31/08-01
 
 **Headline:** the farm was fundamentally broken when the night started, in ways nobody had
-diagnosed, and it is now stable and self-healing. That cost most of the night, so only one arm
-produced a scored result. Seven infrastructure defects were found and fixed, three of them
-things that had been silently degrading the farm for days.
+diagnosed, and it is now stable and self-healing. That cost most of the night, so the campaign
+produced two scored A/B results rather than a full ladder. Seven infrastructure defects were
+found and fixed, three of which had been silently degrading the farm for days.
 
 ---
 
