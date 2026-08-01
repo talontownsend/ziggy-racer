@@ -990,6 +990,7 @@ def main() -> int:
                                                   # laps flat 31.1). Debit at 0.98 unchanged.
     vtrim_lo, vtrim_hi = 0.80, 1.55               # map bounds
     vtrim_dmax = 0.80                             # anti-windup bound on the delta STATE
+    vtrim_quar = 20.0                             # s after a recovery/reset in which incidents do NOT teach
     brk_lock_slip = 2.0                           # brake anti-lock threshold
     brk_lock_mode = 0.0                           # 0 = combined slip (legacy), 1 = longitudinal lockup
     pdg_gain = 0.0                                # plan_degraded speed floor bonus (0 = legacy)
@@ -1227,6 +1228,7 @@ def main() -> int:
                     vtrim_lo = float(_t.get("vtrim_lo", vtrim_lo))
                     vtrim_hi = float(_t.get("vtrim_hi", vtrim_hi))
                     vtrim_dmax = float(_t.get("vtrim_dmax", vtrim_dmax))
+                    vtrim_quar = float(_t.get("vtrim_quar", vtrim_quar))
                     brk_lock_slip = float(_t.get("brk_lock_slip", brk_lock_slip))
                     brk_lock_mode = float(_t.get("brk_lock_mode", brk_lock_mode))
                     car_rpm_expect = float(_t.get("car_rpm_expect", car_rpm_expect))
@@ -1955,7 +1957,19 @@ def main() -> int:
                 elif spd > 8.0:
                     wedge_cut_ticks = 0; wedge_cut_done = False
 
-                incident = launched and ((not on_track) or acte > 8.0 or abs(sideslip) > args.full_slide_deg)
+                # QUARANTINE AFTER RECOVERY. An "incident" is only evidence about the CORNER if
+                # the car was actually racing it. When the follower has just come out of a
+                # recovery -- a disconnect dialog, a menu, a reset, a re-plugged pad -- the car
+                # is mis-placed, mis-localized or stationary, and the off-track/cte tests all
+                # fire for reasons that say nothing about how fast that corner can be taken.
+                # Measured 2026-08-01: a night of disconnect loops and wedges carved the map
+                # from 6% of stations below 1.0 to 41%, and lap median went 29.7 -> 32.8 because
+                # the learner had recorded infrastructure failures as corner danger. Learning is
+                # cheap to defer and expensive to un-learn (credits are 150x slower than cuts).
+                _post_recovery = (time.time() - last_recover < vtrim_quar
+                                  or time.time() - last_reset < vtrim_quar)
+                incident = (launched and not _post_recovery
+                            and ((not on_track) or acte > 8.0 or abs(sideslip) > args.full_slide_deg))
                 if incident:
                     hit = []
                     d_b, j_b = 0.0, i0
