@@ -41,6 +41,12 @@ Rules marked **(measured)** were established by a specific experiment.
     unreachable **(measured 07-29)**. Any N-consecutive-confirmations gate must treat "no data" as
     a skip, not a reset.
 
+13. **One long incident can masquerade as a config regression.** A stuck car parked off-track
+    contributes thousands of samples at speed 0, which dragged an apparent "median 33 s vs the
+    29.7 s baseline" and "on_track 79% vs 99.9%" - while the clean laps either side of it ran
+    cte 0.23 m at 100% on-track **(measured 08-01)**. Always split per-lap before believing an
+    aggregate got worse.
+
 ## Control-law lessons (constraints on future designs)
 
 - **Compensate latency/braking with ONSET, never GAIN.** Raising `brk_ff` causes branch-chatter
