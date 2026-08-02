@@ -75,6 +75,20 @@ Rules marked **(measured)** were established by a specific experiment.
     changed behaviour distribution **(measured 08-01)**. Rule 5 applies to the *settling state*,
     not just to κ/v/load.
 
+18. **Never freeze the layer that compensates for the change under test.** `pad_clamp` alters
+    how much acceleration the car can actually deliver, so every arrival speed downstream moves.
+    Scored over a frozen vtrim it read 33.31 s with 4.25% off-track; the learner had no way to
+    re-carve the corners the car now reaches faster **(measured 08-02)**. Rule 9 already said
+    frozen arms overstate breakage; the sharper form is that a frozen arm is not merely
+    pessimistic but *invalid* when the change moves the plant the frozen layer was fitted to.
+
+19. **Verify the actuator, not just the controller.** Nine percent of ticks commanded
+    `throttle > 1.0`, which `vgamepad` wrote into a ctypes `c_ubyte` that wraps mod 256, so a
+    commanded 1.002 was delivered as 0.000 and 1.076 as 0.071 - about 10 m/s2 of missing drive
+    on a tenth of every lap, invisible in every log because the log records the *commanded*
+    value **(measured 08-02)**. Log commanded and delivered separately, and range-check anything
+    crossing an FFI boundary: ctypes does not raise on overflow.
+
 ## Control-law lessons (constraints on future designs)
 
 - **Compensate latency/braking with ONSET, never GAIN.** Raising `brk_ff` causes branch-chatter

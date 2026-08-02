@@ -552,6 +552,17 @@ def main() -> int:
     resid_net = ResidualNet(n_hidden=16)
     resid_on = 0.0
     resid_mtime = 0.0
+    # Clamp the pad outputs to the legal range at the write site. vgamepad does
+    # `bRightTrigger = round(value * 255)` with no bound check, and that field is a ctypes
+    # c_ubyte, which WRAPS MOD 256 in silence: a commanded 1.002 is delivered as 0.000 and
+    # 1.076 as 0.071. The controller emits throttle > 1.0 on 9.0% of ticks (grip_scale lifts
+    # thr_cap above 1.0), so about a tenth of every lap was driven with the pedal effectively
+    # released, worst exactly where grip is highest and the cap opens up. The existing clamp
+    # at the residual-corrector block never runs, because resid_on defaults to 0.0.
+    # Default ON: this is a correctness fix, not a limiter relaxation. Set 0.0 for the legacy
+    # (wrapping) behaviour to A/B it. Logged pedal values stay PRE-clamp so the exposure
+    # remains measurable from the log.
+    pad_clamp = 1.0
     try:
         resid_net.load(RESID_PATH); resid_mtime = os.path.getmtime(RESID_PATH)
         print(f"residual net: loaded {RESID_PATH} ({resid_net.n_params} params)")
@@ -1307,6 +1318,7 @@ def main() -> int:
                         planner.S_max     = float(_t.get("S_max",     planner.S_max))
                         planner.d0p_max   = float(_t.get("d0p_max",   planner.d0p_max))
                     resid_on = float(_t.get("resid_on", resid_on))
+                    pad_clamp = float(_t.get("pad_clamp", pad_clamp))
                     bc_on = float(_t.get("bc_on", bc_on))
                     bc_w = float(_t.get("bc_w", bc_w))
                     bc_gain = float(_t.get("bc_gain", bc_gain))
@@ -2293,9 +2305,16 @@ def main() -> int:
             # (old downstream SFT block REMOVED 07-13: it applied after all safety overrides,
             # bypassed the slew limiter, and nudged the pedals -- the steer-only blend now
             # lives upstream in the steering law. See the bc block after the base steer calc.)
-            gp.left_joystick_float(x_value_float=float(steer), y_value_float=0.0)
-            gp.right_trigger_float(value_float=float(throttle))
-            gp.left_trigger_float(value_float=float(brake))
+            # PAD WRITE. Clamp here, not upstream: the logged pedal values stay pre-clamp so
+            # the over-range exposure remains visible in the log. See pad_clamp above.
+            _st_out, _th_out, _br_out = steer, throttle, brake
+            if pad_clamp > 0.5:
+                _st_out = max(-1.0, min(1.0, _st_out))
+                _th_out = max(0.0, min(1.0, _th_out))
+                _br_out = max(0.0, min(1.0, _br_out))
+            gp.left_joystick_float(x_value_float=float(_st_out), y_value_float=0.0)
+            gp.right_trigger_float(value_float=float(_th_out))
+            gp.left_trigger_float(value_float=float(_br_out))
             (gp.press_button if clutch else gp.release_button)(button=BTN_A)
             (gp.press_button if up_btn else gp.release_button)(button=BTN_RB)
             (gp.press_button if dn_btn else gp.release_button)(button=BTN_LB)

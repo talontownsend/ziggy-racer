@@ -142,6 +142,73 @@ which is a generalisation problem as much as a speed one. Whether it is also cos
 depends on whether the map is the binding term at those stations, which is being measured
 rather than assumed.
 
+## 3. The bot has been driving on an integer overflow
+
+A six-lens analysis over the 76 clean laps, each finding put through adversarial verification,
+refuted 21 of 26 target-chain and limiter findings to zero. The three that survived were all
+**I/O correctness defects**, and one of them is large.
+
+### The defect
+
+`vgamepad` writes the throttle as `self.report.bRightTrigger = round(value_float * 255)` with no
+bound check. `bRightTrigger` is a ctypes `c_ubyte`, and ctypes **wraps mod 256 in silence**:
+
+| commanded throttle | delivered pedal |
+|---|---|
+| 1.000 | 1.000 |
+| **1.002** | **0.000** |
+| **1.076** (median of the over-range population) | **0.071** |
+| 1.200 | 0.196 |
+| 1.854 (max seen) | 0.851 |
+
+The controller emits `throttle > 1.0` on **9.04% of ticks**, because
+`thr_cap = max_throttle * fc_frac * slip_frac * grip_scale` exceeds 1.0 whenever `grip_scale`
+is above unity. `follow.py` does contain a clamp, but it sits inside the
+`if resid_on > 0.5:` residual-corrector block, and `resid_on` defaults to 0.0, so it never runs.
+Steering and brake never exceed 1.0, so throttle is the only exposure. (Steering would have been
+worse: `sThumbLX` is a `c_short`, so an over-range steer would wrap to full *opposite* lock.)
+
+Measured cost, matched on gear, speed and lateral load, brake off, no shift, below the limiter:
+
+| gear / speed | thr 0.90-1.00 | thr 1.002-1.20 | delta |
+|---|---|---|---|
+| g3 140-180 | +15.87 m/s2 | +2.31 | **-13.56** |
+| g4 140-180 | +12.96 | +2.14 | **-10.83** |
+| g4 100-140 | +14.81 | +6.41 | -8.40 |
+| g3 100-140 | +6.94 | +3.97 | -2.98 |
+
+Clamping at the pad write (`pad_clamp`, hot key, logged values stay pre-clamp) removes the
+deficit entirely: the same cells read **+1.06** and **+0.61** afterwards.
+
+### And it is load-bearing
+
+Scored against the 29.88 s frozen baseline, `pad_clamp = 1.0` **aborted**:
+
+| metric | baseline (wrap active) | pad_clamp |
+|---|---|---|
+| median | 29.88, 0 stalls | **33.31, 3 stalls** |
+| off-track | 0.29% | **4.25%** |
+| \|sideslip\| p99 | 7.40 deg | **21.90 deg** |
+| drive_slip p99 | 3.53 | 5.73 |
+| stopped | 0.14% | 2.83% |
+
+Off-tracks concentrate at s894-905 (2% to 86%) and s404, i.e. corner entries.
+
+This is the fourth data point for the load-bearing-limiter prior, and the most striking, because
+**this limiter was an accident**. Every downstream calibration, and the entire learned speed map,
+was fitted to a plant that quietly lost about 10 m/s2 of drive on a tenth of every lap.
+
+### The test design was wrong, though
+
+`thr_cap` does bind properly under wheelspin (p50 0.541 at drive_slip 1.05-2.0, 0.126 at
+2.0-3.5). The over-range commands happen at **low** slip, 54.7% of them below drive_slip 0.5.
+So the off-tracks are not traction loss. The car simply accelerates harder down the straights
+and **arrives at corners faster than the speed plan expects** - and I had frozen the learner,
+which is the one layer that absorbs new arrival speeds. That is METHODOLOGY rule 9 exactly:
+frozen-map arms overstate downstream breakage. The frozen number is not a verdict on the fix.
+
+Re-running with learning on, from the known-good map, 70 minutes of re-carving before scoring.
+
 ## Notes
 
 - The two-PID follower (myenv launcher plus Python312 child, same parentage) is normal. Check
