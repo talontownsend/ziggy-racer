@@ -112,14 +112,27 @@ Rules marked **(measured)** were established by a specific experiment.
 
 ## Working prior: the conservative-looking limiters are load-bearing
 
-Three independent relaxations have now been proposed from static analysis and **all three
-measured worse in the car** (08-01, 50 scored laps each, non-overlapping IQRs):
+Five independent relaxations have now been proposed from static analysis and **all five measured
+worse in the car** (50 scored laps each, non-overlapping IQRs):
 
 | relaxation | paper argument | measured |
 |---|---|---|
 | remove the human speed ceiling (`vown_w` 1.0) | it caps below the bot's own model at 418/1000 stations | **+0.90 s** |
 | `slip_target` 1.05 -> 1.35 | tyres peak at slip 1.18-1.80 | **0 -> 4 stalls / 15 min** |
 | `brk_lock_slip` 2.0 -> 3.0 | delivered decel is flat to slip 3.0 | **+1.12 s** |
+| `pad_clamp` 1.0 (deliver the full commanded pedal) | 22.4% of average pedal is destroyed by a `c_ubyte` wrap | **+0.7 s, 8 stalls, off-track 0.20 -> 4.25%** |
+| `slip_target` 1.05 -> 1.50 **with** `spin_thr` 1.5 | the derate is a steering detector: it fires on 44.3% of the lap for a 1.58x sideslip-risk lift, and on 83% of full-lock ticks, while the car sits 21 km/h below target | **+4.6 s, off-track 0.74 -> 2.21%, sideslip p99 7.5 -> 17.4** |
+
+**The fifth one is the most instructive, because the analysis behind it was correct and the
+conclusion still wrong.** `drive_slip` really is steering-correlated (r = +0.372 vs +0.005 for
+the longitudinal-only `drive_spin`), and the shipped threshold really does tax 44% of the lap for
+almost no measured safety return. But relaxing it produced **more** wheelspin, not less:
+`drive_spin > 1.5` went 2.02% -> 4.82% of ticks. Derating throttle in proportion to *total* tyre
+load is friction-circle physics, not a mis-fire: you cannot spend grip laterally and
+longitudinally at once. `fc_frac` already does this against the *modelled* grip ellipse; the
+combined-slip term does it against the *measured* tyre state and catches what the model misses.
+**"Signal X correlates with steering" is not evidence that a throttle limiter is mis-targeted.
+For a friction-circle-aware limiter, that correlation is the intended behaviour.**
 
 The tyre-data arguments were not wrong about the tyres; they were wrong about the consequence.
 Extra slip goes into rotation rather than drive, deeper brake slip lengthens the stop, and the

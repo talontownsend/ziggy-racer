@@ -136,3 +136,49 @@ All of the above uses human laps as an *evaluation target*, which `CONSTRAINTS.m
 None of it proposes a human-derived operating bound. A behavioural-cloning policy fitted to
 this recording would violate #3 and is not proposed here; the recording tells us **what** is
 wrong, and the fixes must come from the bot's own measurements.
+
+---
+
+# Follow-up, 08-02 10:00: the corner-exit derate is not a defect either
+
+The "fix corner-exit throttle authority first" conclusion above was tested and is **wrong**.
+
+The reasoning behind it reproduced independently and held up: `drive_slip` is
+`max|combined_slip|`, it correlates with steering (r = +0.372 here, +0.005 for the
+longitudinal-only `drive_spin`), its mean climbs 0.601 -> 1.707 across steering bands while
+`drive_spin` stays flat, and the shipped threshold fires on **44.3% of the lap for a 1.58x lift**
+in the probability of exceeding 7 deg of sideslip within 0.35 s, measured from a settled car.
+Every one of those numbers is right.
+
+The arm that followed from them was not. `slip_target` 1.05 -> 1.50 with `spin_thr` 1.5 (raise
+the combined ceiling, add the longitudinal signal to carry the wheelspin duty) against a
+same-session 29.94 s baseline:
+
+| | baseline | arm |
+|---|---|---|
+| median | 29.94 | **34.50, aborted** |
+| \|sideslip\| p99 | 7.50 deg | **17.40** |
+| off-track | 0.74% | **2.21%** |
+| **`drive_spin` > 1.5** | **2.02%** | **4.82%** |
+
+It produced **more genuine wheelspin**, which is the opposite of what a better-targeted wheelspin
+guard should do. So the combined-slip derate is not a mis-fired wheelspin detector at all; it is
+doing friction-circle work against the *measured* tyre state, where `fc_frac` only does it
+against the *modelled* grip ellipse. Detecting steering is the intended behaviour for a limiter
+whose job is to stop the car spending grip laterally and longitudinally at the same time.
+
+## Where that leaves the 3.25 s
+
+Both throttle-side defects are now measured and both are load-bearing:
+
+- the `c_ubyte` wrap destroys 22.4% of average pedal, and removing it costs 0.7 s and 8 stalls
+- the combined-slip derate taxes 44% of the lap, and relaxing it costs 4.6 s
+
+Every guard between the bot and its own commanded target has now been tested and each one is
+holding the car together rather than holding it back. Five relaxations, five losses.
+
+The human reaches those same speeds in the same car with the same grip, so the speed is
+physically available. What differs is not a limit value but the **coordination**: how throttle,
+brake and steering are sequenced through a corner so that grip is spent in the right order. That
+is a controller-architecture question, not a tuning question, and no knob in the current
+structure addresses it. It should be treated as the next real project rather than the next arm.
