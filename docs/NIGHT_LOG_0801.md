@@ -110,7 +110,26 @@ This is now invariant 8 in `CONSTRAINTS.md`.
 
 ### Result
 
-RESULT_PLACEHOLDER
+50 scored laps, hands-off, 23:52 to 00:32:
+
+| window | median | best | p25 | p75 | stalls |
+|---|---|---|---|---|---|
+| HEAD, earlier tonight | 33.28 | 32.78 | 33.15 | 33.37 | 0 |
+| bisect to `2aeed06` | 33.00 | 32.51 | | | 0 |
+| **net clip + restore** | **30.27** | **29.29** | 29.89 | 30.58 | 1 |
+| 07-29 reference | 29.72 | | | | 0 |
+
+**-3.01 s** against tonight's HEAD, and the best lap beats the 07-29 baseline median. The
+remaining 0.55 s to 29.72 is within the range the map re-earns as it settles.
+
+The confirming detail is not the lap time, it is what the map did during the window: floor
+occupancy fell **3.5% to 1.2%** and mean rose 1.4587 to 1.4706. Under the old bound the map
+only ever went down, because debits could always reach the floor while credits could no longer
+lift off it. That asymmetry was the ratchet, and it is gone: the learner is now climbing.
+
+Known-good state snapshotted to `recordings/snapshots/*_GOOD_3027_0802.npz`.
+
+One stall in 50 laps against 0 at baseline. Worth watching, not worth acting on yet.
 
 ## Notes
 
