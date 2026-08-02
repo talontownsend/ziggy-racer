@@ -562,7 +562,7 @@ def main() -> int:
     # Default ON: this is a correctness fix, not a limiter relaxation. Set 0.0 for the legacy
     # (wrapping) behaviour to A/B it. Logged pedal values stay PRE-clamp so the exposure
     # remains measurable from the log.
-    pad_clamp = 1.0
+    pad_clamp = 0.0
     spin_thr = 0.0                                # drive-wheelspin derate threshold on the
                                                   # longitudinal slip_ratio. 0.0 = OFF (legacy,
                                                   # combined-slip signal only). Calibrate from
@@ -628,7 +628,7 @@ def main() -> int:
                    "slip_brake": slip_brake_gain,
                    "cte_soft": cte_soft, "cte_hard": cte_hard,
                    "planner_alat": args.planner_alat, "planner_alat_k": args.planner_alat_k,
-                   "slip_target": args.slip_target, "k_counter": args.k_counter, "r_thr": args.r_thr,
+                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "k_counter": args.k_counter, "r_thr": args.r_thr,
                    "understeer_gain": args.understeer_gain, "understeer_thr": args.understeer_thr},
                   open(args.tune_file, "w"), indent=2)
     except Exception:
@@ -1907,8 +1907,12 @@ def main() -> int:
                 throttle = 0.0
                 _th_hold = 0.0                                      # reset the hold latch off-throttle
                 thr_i *= 0.90                                       # bleed the integral fast
-                ff = brk_ff * (desc_f / 30.0)
-                brake = min(ff + args.kp_brk * max(0.0, -err), brake_cap) * brake_slip_frac
+                # NOTE: this local must NOT be called `ff` (it shadowed the STEERING feedforward
+                # and corrupted that log column on every braking tick: sign agreement with
+                # kappa_ff was 32.9% on brake ticks vs 100% on throttle ticks, ~9.75 s of every
+                # lap). It must also not be called `brk_ff`, which is a live tune key.
+                brk_ff_t = brk_ff * (desc_f / 30.0)
+                brake = min(brk_ff_t + args.kp_brk * max(0.0, -err), brake_cap) * brake_slip_frac
 
             # --- SLIP-INDUCTION (point #1): trail-brake to ROTATE the car when the front
             # steering is SATURATED in a tight corner but it still understeers (won't turn
