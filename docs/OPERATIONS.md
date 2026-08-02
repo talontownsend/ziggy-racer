@@ -59,6 +59,28 @@ every credit and cut too, and generalizes damage across similar stations.
 cp recordings/vtrim_net.npz recordings/vtrim_delta.npz recordings/snapshots/
 ```
 
+## 4c. Check the learner is healthy (do this before and after any scored window)
+
+```bash
+python tools/vtrim_health.py
+```
+
+Exit code 1 gates a deploy. It reports the net's output range, floor/ceiling occupancy, delta
+windup, reconstruction consistency, the **window-MIN** mean (what the cap actually reads, always
+lower than the map mean), and the one diagnostic that matters:
+
+**Stations pinned at a map bound while their correction pushes the other way.** A station at the
+0.80 floor holding a *positive* delta is a station the learner is trying and failing to lift.
+That signature cost 3.3 s/lap for three days before anything else revealed it. The broken
+08-01 state reports 575 stranded (57.5%); a healthy state reports 0-2.
+
+A drifted-but-clipped net is a **WARN**, not a failure: driving is unaffected because
+`vtrim_base()` clips, but the net has stopped contributing generalisation and `delta` is
+carrying the whole map, which matters when porting to a new track. Fix by refitting the net to
+the *current* map (not to the 07-03 feature labels, which would discard everything learned
+since) and recomputing `delta = current_map - clip(net(X))`. Done 08-02: `|delta|` mean 0.397
+to 0.032, 28.5% to 0% pinned at the bound, with the effective map reproduced exactly.
+
 ## 4b. After ANY file move or reorganisation
 ```bash
 python tools/_selftest_imports.py
