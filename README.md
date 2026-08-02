@@ -333,4 +333,14 @@ Stop it by alt-tabbing to its console and pressing **Ctrl+C** (this releases all
 
 ---
 
+## License
+
+[PolyForm Noncommercial License 1.0.0](LICENSE). Free to use, modify, and share for any
+noncommercial purpose, including personal projects, research, education, and public-interest
+organizations. Commercial use requires a separate license from the author.
+
+Required Notice: Copyright 2026 Talon Townsend (https://github.com/talontownsend/ziggy-racer)
+
+---
+
 *Ziggy Racer is a personal control-systems project applying process-control and chemical-engineering rigor — system identification, closed-form physics modelling, feedforward/feedback design, anti-windup, and rigorous experimental methodology — to the novel domain of a self-taught racing driver.*
