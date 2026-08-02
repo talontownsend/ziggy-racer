@@ -55,18 +55,14 @@ while ($true) {
   # notifications both do it). So try the cheap, correct remedy first, every time the log
   # stops growing, and only escalate to a restart if focus was not the problem.
   if ($stall -gt 45) {
-    # THE FOCUS THIEF. "Windows Input Experience" (TextInputHost.exe) repeatedly grabs the
-    # foreground on this machine, which pauses FH6, stops the log, and makes every refocus
-    # attempt fail -- SetForegroundWindow is refused while it owns the foreground, so even
-    # the AttachThreadInput workaround loses. Measured 2026-08-01: the farm produced ZERO
-    # laps across several hours with nobody touching the machine, and refocus started
-    # succeeding on attempt 1 the moment this process was ended. It is an on-demand UWP host
-    # (touch keyboard / emoji panel); an AFK racing rig never needs it and Windows restarts
-    # it automatically if something does.
-    Get-Process TextInputHost -ErrorAction SilentlyContinue | ForEach-Object {
-      Stop-Process -Id $_.Id -Force -ErrorAction SilentlyContinue
-      WLog "  ended TextInputHost $($_.Id) (it was holding the foreground)"
-    }
+    # NOTE 2026-08-01: this used to end TextInputHost.exe here, on the theory that it was
+    # stealing the foreground. That theory is NOT established. Every observation supporting it
+    # was made while computer use was ACTIVE in the session (screenshots, permission dialogs,
+    # the Claude app returning to the front), so "TextInputHost was in front" may have been a
+    # symptom of that rather than an independent cause. On this machine it is resident from 24 s
+    # after boot and normally idle (17.7 s CPU in 11 hours). Killing a system process on an
+    # unproven theory also destroys the evidence, so the kill is removed and tools/focus_watch.ps1
+    # records the real foreground owner instead. Refocus alone is still attempted below.
     $fz = Get-Process forzahorizon6 -ErrorAction SilentlyContinue
     if ($fz) {
       Add-Type -Name FzW -Namespace Wd -MemberDefinition @'
