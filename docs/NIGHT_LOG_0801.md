@@ -207,7 +207,54 @@ and **arrives at corners faster than the speed plan expects** - and I had frozen
 which is the one layer that absorbs new arrival speeds. That is METHODOLOGY rule 9 exactly:
 frozen-map arms overstate downstream breakage. The frozen number is not a verdict on the fix.
 
-Re-running with learning on, from the known-good map, 70 minutes of re-carving before scoring.
+### Re-run with learning on: still worse, and the reason is the interesting part
+
+70 minutes of adaptation from the known-good map, then 40 minutes scored:
+
+| | median | best | p25 | p75 | stalls |
+|---|---|---|---|---|---|
+| baseline, frozen, wrap active | **29.88** | 29.39 | 29.66 | 30.25 | **0** |
+| `pad_clamp`, frozen | 33.31 (aborted) | | | | 3 |
+| `pad_clamp`, 70 min adapted | 30.62 | 29.82 | 30.10 | **33.21** | **8** |
+
+Adaptation recovered most of the frozen arm's loss (33.31 to 30.62) and the early instability
+did clear: stalls ran 2, 1, 0, 0, 0, 0, 0 across the first 35 minutes. Then they came back and
+kept climbing: 3, 3, 4, 2, 4, 4, 4. Over the same period the learner carved the map from
+1.4665 down to 1.4198, and the window-min (what the cap actually reads) from 1.3925 to 1.3058.
+
+That is a spiral, not a convergence. The learner's only tool for "the car arrived too fast" is
+to cut the map, a cut is a window-MIN over 18 m so it suppresses a whole approach, the deeper
+cut costs corner speed, and the resulting incidents trigger further cuts. It never reaches a
+stable operating point, and the p75 of 33.21 against a 30.25 baseline is where that shows.
+
+**Verdict: `pad_clamp` stays OFF (default 0.0, watchdog dead-man 0.0).** Reverted, known-good
+learned state restored, confirmed by a scored window.
+
+### What this actually means
+
+`throttle > 1.0` only ever occurs when the car is well *below* its commanded target, because
+`desired = kp_thr * err + thr_i`. So the over-range commands are the controller asking for speed
+it is not getting - and the independent budget decomposition found exactly that: **1.524 s/lap
+of pure delivery shortfall**, the car failing to reach its own commanded target on its own path.
+
+The speed plan is therefore systematically un-achievable, and every downstream calibration - the
+limits, the derates, and the whole learned vtrim map - has been fitted to a plant that quietly
+loses about 10 m/s2 of drive on 9% of ticks. Repair the actuator and the targets become
+reachable, at which point they turn out to be too aggressive for the corners that follow.
+
+This is not an overnight tune. Using that acceleration requires rebuilding the speed plan
+against the true plant, in this order:
+
+1. Fix the actuator (`pad_clamp = 1.0`) and hold it fixed.
+2. Rebuild the braking/arrival model against measured acceleration **with the clamp on**, since
+   the current one was identified on the weakened plant.
+3. Reset the vtrim map and re-learn from a neutral prior rather than letting the existing map
+   carve down into it. The carving spiral above is the direct evidence that incremental
+   adaptation from a plant-mismatched map does not get there.
+
+The prize is real: roughly 10 m/s2 of drive on a tenth of every lap, against a measured
+delivery shortfall of 1.524 s. That is far larger than every tuning candidate found tonight
+combined (~0.25 s, all below the detection floor of a 40-minute window).
 
 ## Notes
 
