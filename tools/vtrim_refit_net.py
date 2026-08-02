@@ -95,6 +95,9 @@ def main() -> int:
     np.savez(os.path.join(REC, "vtrim_delta.npz"), delta=np.clip(d, -DMAX, DMAX))
     print(f"\ndeployed; previous pair snapshotted as *_{a.tag}.npz")
     print("RESTART THE FOLLOWER: delta is read at startup.")
+    print("Do NOT run tools/vtrim_health.py until after that restart. Between the delta swap "
+          "and the restart, vtrim_map.npz on disk is still the OLD output while delta is the "
+          "new input, so the reconstruction and stranded-station checks legitimately fail.")
     return 0
 
 

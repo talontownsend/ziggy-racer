@@ -13,7 +13,8 @@ because `map_w` is an 18 m window-MIN that suppressed targets across most of the
 | where the night started | 33.28 | 32.78 | 0 |
 | after the net-clip fix | 30.27 | 29.29 | 1 |
 | after the map settled | 30.12 | 29.35 | 1 |
-| **frozen baseline (current state)** | **29.88** | **29.39** | **0** |
+| frozen baseline | 29.88 | 29.39 | 0 |
+| **current state (net refit, learning on)** | **29.96** | **29.29** | **0** |
 | 07-29 reference | 29.72 | | 0 |
 
 **A second, larger defect was found and is NOT fixed, deliberately.** `vgamepad` writes throttle
@@ -283,6 +284,43 @@ against the true plant, in this order:
 The prize is real: roughly 10 m/s2 of drive on a tenth of every lap, against a measured
 delivery shortfall of 1.524 s. That is far larger than every tuning candidate found tonight
 combined (~0.25 s, all below the detection floor of a 40-minute window).
+
+## 4. Net refit: the generalising term had stopped generalising
+
+`vtrim` is `map = clip(clip(net(features)) + delta)`. The net is meant to be the part that
+transfers to a new track and `delta` the per-station residual. Tonight's health check showed the
+net had stopped carrying anything: raw output -2.864 to +4.856 with **87.6% outside the map
+range**, and `|delta|` mean 0.397 with **28.5% of stations pinned at the delta bound**. Clipping
+made that harmless to drive (section 2), but a port to a new track would have started from noise.
+
+Refitting the net to the **current** map, rather than to `vtrim_features.npz`'s stored 07-03
+labels (which `python vtrim_net.py` would use, silently discarding a month of learning), gives:
+
+| | before | after |
+|---|---|---|
+| net raw range | -2.864 to +4.856 | +0.674 to +1.688 |
+| \|delta\| mean | 0.397 | **0.032** |
+| delta pinned at bound | 28.5% | **0%** |
+| effective map | | **reproduced exactly, max err 0.000000** |
+
+Because the map is reproduced exactly, first-tick behaviour is unchanged and only the learning
+dynamics differ. Deployed and scored with learning on:
+
+| | median | best | p25 | p75 | stalls |
+|---|---|---|---|---|---|
+| frozen baseline | 29.88 | 29.39 | 29.66 | 30.25 | 0 |
+| revert confirmation | 29.99 | 29.44 | 29.74 | 30.28 | 3 |
+| **refit, learning on** | **29.96** | **29.29** | 29.76 | **30.11** | **0** |
+
+Median indistinguishable from both (the three medians span 0.11 s against a standard error of
+about 0.09 s), best lap of the night, tightest p75 of the night, no stalls. Kept. `|delta|`
+stayed at 0.033-0.050 through 90 minutes of learning instead of drifting back to the bound, and
+the map climbed to its highest value yet (window-min 1.3974).
+
+Tooling caveat found the hard way: do not run `tools/vtrim_health.py` between swapping
+`vtrim_delta.npz` and restarting the follower. `vtrim_map.npz` is an output the follower rewrites
+at startup, so in that gap the check compares the old output against the new input and fails
+correctly but uninformatively. Documented in OPERATIONS 4c and in the tool.
 
 ## Notes
 

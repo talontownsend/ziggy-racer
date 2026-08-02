@@ -74,6 +74,11 @@ lower than the map mean), and the one diagnostic that matters:
 That signature cost 3.3 s/lap for three days before anything else revealed it. The broken
 08-01 state reports 575 stranded (57.5%); a healthy state reports 0-2.
 
+**Run it only when the follower has been up since the last change to `vtrim_delta.npz`.**
+`vtrim_map.npz` is an output the follower rewrites at startup, so in the gap between swapping
+delta and restarting, the file on disk is the old output against the new input and the
+reconstruction and stranded-station checks fail correctly but uninformatively.
+
 A drifted-but-clipped net is a **WARN**, not a failure: driving is unaffected because
 `vtrim_base()` clips, but the net has stopped contributing generalisation and `delta` is
 carrying the whole map, which matters when porting to a new track. Fix by refitting the net to
