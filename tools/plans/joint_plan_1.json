@@ -1,0 +1,13 @@
+[
+ {"label":"J1_grip_up",
+  "arm":{"planner_alat":30.0, "spin_thr":2.5},
+  "note":"planner_alat is itself a joint move: it raises the corner-speed target (v_curve) AND the in-corner throttle cap (fc_frac) coherently. Paired with the sharply-targeted wheelspin guard, which fires on only 0.20% of ticks for a 185x sideslip-risk lift, i.e. near-free insurance."},
+
+ {"label":"J2_demand_down",
+  "arm":{"planner_alat":24.0, "slip_target":1.25},
+  "note":"THE UNTESTED DIRECTION. The bot is 13.4 km/h below its own target, so desired = kp_thr*err saturates and the throttle is shaped by the cap, not the controller. Lower the demand to something reachable AND give it more permission to reach it: a controller tracking an achievable target may drive better than one permanently saturated against an impossible one."},
+
+ {"label":"J3_grip_up_guarded",
+  "arm":{"planner_alat":30.0, "slip_target":0.90, "spin_thr":2.5},
+  "note":"More demand, paid for with a tighter combined ceiling. slip_target 0.85 alone was STABLE after pad_clamp (sideslip p99 7.40 vs 7.30 baseline) but cost more throttle than it returned; here the tightening is paid back by the higher grip model rather than being a pure tax."}
+]
