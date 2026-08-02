@@ -563,6 +563,11 @@ def main() -> int:
     # (wrapping) behaviour to A/B it. Logged pedal values stay PRE-clamp so the exposure
     # remains measurable from the log.
     pad_clamp = 1.0
+    spin_thr = 0.0                                # drive-wheelspin derate threshold on the
+                                                  # longitudinal slip_ratio. 0.0 = OFF (legacy,
+                                                  # combined-slip signal only). Calibrate from
+                                                  # the logged drive_spin column before arming.
+
     try:
         resid_net.load(RESID_PATH); resid_mtime = os.path.getmtime(RESID_PATH)
         print(f"residual net: loaded {RESID_PATH} ({resid_net.n_params} params)")
@@ -825,7 +830,7 @@ def main() -> int:
                    "ff", "p_t", "i_t", "d_t", "cte_int", "cte_dot", "kappa_ff",
                    "lap_no", "lap_t", "sideslip", "plan_d0", "plan_L", "plan_deg",
                    "psi_deg", "km_max", "kap_car", "vcurve_kmh", "thr_cap", "yawrate",
-                   "meas_latg", "drive_slip", "brake_lock", "alat_max_g", "fc_frac",
+                   "meas_latg", "drive_slip", "brake_lock", "drive_spin", "alat_max_g", "fc_frac",
                    "r_des", "r_meas", "e_r", "over", "under", "race_pos",
                    "y", "pitch_deg", "roll_deg",
                    "vt2_mult", "vt2_inside",
@@ -1319,6 +1324,7 @@ def main() -> int:
                         planner.d0p_max   = float(_t.get("d0p_max",   planner.d0p_max))
                     resid_on = float(_t.get("resid_on", resid_on))
                     pad_clamp = float(_t.get("pad_clamp", pad_clamp))
+                    spin_thr = float(_t.get("spin_thr", spin_thr))
                     bc_on = float(_t.get("bc_on", bc_on))
                     bc_w = float(_t.get("bc_w", bc_w))
                     bc_gain = float(_t.get("bc_gain", bc_gain))
@@ -1805,10 +1811,28 @@ def main() -> int:
             # power-on oversteer: sideslip p99 7.4 -> 27.8 deg, off 1.4 -> 8.4%. The
             # combined-slip mute IS the power-oversteer guard. Any retry must keep a
             # combined ceiling, just softer, e.g. derate from ~1.5 instead of 1.05.)
+            # DRIVE WHEELSPIN depth: slip_ratio > 0 means the wheel is turning FASTER than the
+            # road, which is what wheelspin actually is. The mirror of brake_lock. Logged
+            # unconditionally and OFF by default (spin_thr=0), so the threshold is calibrated
+            # from the bot's own spin-vs-sideslip curve rather than guessed -- same discipline
+            # that produced brake_lock.
+            drive_spin = max(0.0, max(f.slip_ratio_fl, f.slip_ratio_fr,
+                                      f.slip_ratio_rl, f.slip_ratio_rr))
             if drive_slip <= slip_target:
                 slip_frac = 1.0
             else:
                 slip_frac = max(0.15, 1.0 - (drive_slip - slip_target) / max(slip_target, 1e-3))
+            # TWO-SIGNAL THROTTLE DERATE (08-02). drive_slip is COMBINED slip, so it rises with
+            # cornering and the single-signal derate is partly a steering detector: tightening
+            # slip_target 1.05 -> 0.85 restored stability after pad_clamp (sideslip p99 7.40 vs
+            # a 7.30 baseline) but cut commanded throttle 0.407 -> 0.348 and lost 1.1 s, because
+            # it taxes every corner rather than the actual spin. The 07-03 revert note prescribes
+            # the shape of the fix: keep a combined ceiling, just SOFTER, and add the signal that
+            # distinguishes spin from cornering. So: raise slip_target toward ~1.5 for the
+            # combined ceiling and let drive_spin carry the wheelspin duty. Both must bind.
+            if spin_thr > 0.0 and drive_spin > spin_thr:
+                slip_frac = min(slip_frac,
+                                max(0.15, 1.0 - (drive_spin - spin_thr) / max(spin_thr, 1e-3)))
             # crest throttle-ease: lift when the truck goes light over a crest (grip_scale<1)
             # -- prevents power-oversteer over crests (gating it OFF on straights caused 9% slides).
             thr_cap = max_throttle * fc_frac * slip_frac * grip_scale
@@ -2337,7 +2361,7 @@ def main() -> int:
                            round(kap_car, 4), round(v_curve * 3.6, 1), round(thr_cap, 3),
                            round(f.angvel_y, 3),
                            round(f.ax / 9.81, 2), round(drive_slip, 2),
-                           round(brake_lock, 2),
+                           round(brake_lock, 2), round(drive_spin, 3),
                            round(alat_max_now / 9.81, 2), round(fc_frac, 2),
                            round(r_des, 3), round(r_meas_f, 3), round(e_r, 3),
                            int(oversteer), int(understeer), f.race_position,
