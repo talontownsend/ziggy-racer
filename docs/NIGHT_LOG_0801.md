@@ -1,5 +1,33 @@
 # Night log, 08-01 into 08-02
 
+## Bottom line
+
+**The 3.3 s regression is fixed and the cause is understood.** It was not the game, the car, the
+drivers or the settings. The vtrim net had drifted outside the range its own output can occupy,
+and the anti-windup bound I added on 07-29 then stopped the correction term from lifting stations
+off the floor, producing a downward-only ratchet. Floor occupancy had gone 3.5% to 32.1%, and
+because `map_w` is an 18 m window-MIN that suppressed targets across most of the lap.
+
+| window | median | best | stalls |
+|---|---|---|---|
+| where the night started | 33.28 | 32.78 | 0 |
+| after the net-clip fix | 30.27 | 29.29 | 1 |
+| after the map settled | 30.12 | 29.35 | 1 |
+| **frozen baseline (current state)** | **29.88** | **29.39** | **0** |
+| 07-29 reference | 29.72 | | 0 |
+
+**A second, larger defect was found and is NOT fixed, deliberately.** `vgamepad` writes throttle
+into a ctypes `c_ubyte` with no bound check, and ctypes wraps mod 256 in silence. The controller
+commands `throttle > 1.0` on 9.04% of ticks, so a commanded 1.002 was delivered as **0.000**
+pedal. That is about 10 m/s2 of missing drive on a tenth of every lap. Repairing it made the car
+*slower and much less stable* (30.62 s and 8 stalls after 70 minutes of adaptation, against
+29.88 s and 0 stalls), because every limit and the whole learned map are calibrated to the
+weakened plant. It is left off, with the analysis and a staged plan for using it properly.
+
+**Nothing has been pushed.** All work is in local commits for review.
+
+---
+
 Two things were settled tonight. The focus diagnosis from 07-31 was wrong, and the ~3.3 s
 regression that had survived nine straight exoneration tests was found. Both corrections came
 from tests that could have gone the other way, which is the only reason to trust them.
