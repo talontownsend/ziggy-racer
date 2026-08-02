@@ -182,3 +182,58 @@ physically available. What differs is not a limit value but the **coordination**
 brake and steering are sequenced through a corner so that grip is spent in the right order. That
 is a controller-architecture question, not a tuning question, and no knob in the current
 structure addresses it. It should be treated as the next real project rather than the next arm.
+
+---
+
+# Follow-up 2, 08-02 11:00: coordination is not the answer either
+
+If the gap were about *sequencing* grip through a corner (brake, release, rotate, power) rather
+than about limit values, it would show as a thinner friction-circle usage: one axis at a time
+instead of combined loading. It does not. Over 48 clean human laps and 71 clean bot laps,
+lateral from the same telemetry channel and longitudinal from dv/dt for both:
+
+| | human | bot |
+|---|---|---|
+| combined loading (both axes > 0.5 g) | 57.4% | **58.8%** |
+| lateral only | 27.3% | 22.6% |
+| longitudinal only | 15.0% | 13.6% |
+| trail-braking (lat > 1 g and decel > 1 g) | 11.57% | **16.11%** |
+| power-on (lat > 1 g and accel > 1 g) | 14.59% | 12.69% |
+
+And the g-g envelope, the honest test of whether a driver can hold longitudinal force while
+already loaded laterally:
+
+| lateral load | human \|long\| p95 | bot \|long\| p95 |
+|---|---|---|
+| 0.5-1.0 g | 2.41 | 2.40 |
+| 1.0-1.5 g | 2.07 | **2.22** |
+| 1.5-2.0 g | 1.91 | **2.02** |
+| 2.0-2.5 g | 1.66 | **1.82** |
+| 2.5-3.0 g | 1.45 | **1.74** |
+| 3.0+ g | 1.45 | 1.21 |
+
+**The bot combines grip as well as or better than the human at every lateral load below 3 g, and
+trail-brakes more.** The coordination hypothesis in its "spends grip in the wrong order" form is
+refuted. Task #15's option (A) should be closed; option (B), joint rather than single-axis
+tuning, is what remains.
+
+## The two residuals that survive
+
+**1. Peak grip.** Total \|a\| p99 is 4.13 g for the human against 3.48 g for the bot, and lateral
+p99 4.05 vs 3.26. The bot's own grip model allows only about 3.2 g at these speeds
+(`planner_alat` 27 plus `planner_alat_k` 0.0025·v², which rises just 3% across the speed
+difference), so the human is exceeding the model, not just the bot. Whether the model is
+under-calling the high end, or the peaks come from banked sections where the lateral channel
+carries a gravity component, is **not established here** and should not be assumed either way.
+
+**2. Dead time.** The bot spends 4.98% of on-track ticks (**1.48 s/lap**) with both axes under
+0.5 g, against the human's 0.3%. It is not recovery artifact: 84.6% of it is above 120 km/h, at
+163.5 km/h against a 178.9 km/h target. But it is also **not a throttle cap**: commanded throttle
+there is 0.420 while `thr_cap` allows 1.016, `fc_frac` is 1.000 and `drive_slip` is 0.10. At those
+same stations across all ticks the throttle sits at 0.996. So it is a transient, and the throttle
+is zeroed 49.3 times per lap (94.2% by the brake branch, 61% of those lasting under 56 ms) with a
+~264 ms rate-limited ramp back each time.
+
+That looks like a prize and probably is not one: the speed deficit across all below-cap ticks is
+only +1.3 km/h, and an earlier adversarial pass priced brake-branch chatter at 0.03 s/lap with a
+hard upper bound of 0.07. Recorded so it is not rediscovered and chased a third time.
