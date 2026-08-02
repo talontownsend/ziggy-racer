@@ -131,6 +131,17 @@ Known-good state snapshotted to `recordings/snapshots/*_GOOD_3027_0802.npz`.
 
 One stall in 50 laps against 0 at baseline. Worth watching, not worth acting on yet.
 
+A second 45 minute window with no config change, letting the map keep learning, settled at
+**30.12 median / 29.35 best / p25 29.84 / p75 30.29 / 1 stall (n=50)**. Another 0.15 s came back
+on its own and the spread tightened. That is the baseline any arm tonight has to beat.
+
+The map is now saturating upward instead: floor 1.7%, **ceiling 78.2%** (was 68.6% an hour
+earlier), 0 stranded, window-min 1.3925. Two-thirds to three-quarters of the track sitting at
+the learned ceiling means the map has lost most of its ability to discriminate between stations,
+which is a generalisation problem as much as a speed one. Whether it is also costing lap time
+depends on whether the map is the binding term at those stations, which is being measured
+rather than assumed.
+
 ## Notes
 
 - The two-PID follower (myenv launcher plus Python312 child, same parentage) is normal. Check
