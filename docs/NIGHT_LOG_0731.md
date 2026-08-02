@@ -11,7 +11,25 @@ found and fixed, three of which had been silently degrading the farm for days.
 
 Each of these masked the next, which is why it took the whole night to unpick.
 
-### 1. `TextInputHost.exe` was stealing the foreground (the root cause)
+### 1. Focus theft was real - but I named the wrong culprit (CORRECTED 08-01 21:30)
+
+**The claim below about `TextInputHost.exe` is WRONG.** A controlled test on 08-01 settled it:
+35 minutes hands-off with computer use never activated in the session, the farm produced
+**146,727 rows / 50 laps / 0 stalls**, FH6 held the foreground the entire time, and
+**TextInputHost never took the foreground once**. The identical hands-off test two nights
+earlier - in a session where computer use HAD been activated - produced **0 laps**.
+
+The one foreground steal the instrument caught was **`fg=claude`**, the Claude desktop app,
+at the moment I was issuing tool calls. So focus theft is caused by **my own activity through
+the Claude app**, plausibly amplified when computer use starts or stops, and TextInputHost was
+a red herring: I saw it in front once, during a computer-use session, and generalised from a
+single contaminated observation. It is resident from 24 s after boot and normally idle.
+
+The watchdog no longer kills it. `tools/focus_watch.ps1` now records the real foreground owner
+every 5 s so this is never inferred again. **Practical consequence: the farm is fine unattended;
+what disturbs it is me touching the machine.** Original (wrong) writeup follows for the record.
+
+### 1b. ORIGINAL CLAIM, SUPERSEDED: `TextInputHost.exe` was stealing the foreground
 
 FH6 only accepts the virtual gamepad while it is the **foreground** window; lose focus and the
 game pauses, the log stops growing, and the watchdog reads it as a hang. On this machine
