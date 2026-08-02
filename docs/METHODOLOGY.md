@@ -55,6 +55,26 @@ Rules marked **(measured)** were established by a specific experiment.
     damage, look at the WINDOW-MIN, never the per-station value: at station 294 the map itself
     still read 1.550.
 
+15. **A code bisect cannot exonerate code when learned state persists across the revert.**
+    Running the 29.72 s commit's `follow.py` scored 33.00 and I read it as "the regression is
+    environmental", which sent the search into game settings and hardware for hours. The damage
+    was in `recordings/vtrim_*.npz`, which `git checkout` does not touch **(measured 08-01)**.
+    Bisect the *state* alongside the code, or the arm is not what it claims to be.
+
+16. **`git checkout <commit> -- <path>` writes the INDEX too**, so a later
+    `git checkout -- <path>` restores the bisect version rather than HEAD. Restore with
+    `git checkout HEAD -- <path>` and verify by **content** (`md5sum`, or grep for a line the
+    revision does or does not contain). `git log -1 -- <path>` reports the last commit that
+    *touched* the file and proves nothing about what is on disk **(cost 1 h of wrong-code
+    running, 08-01)**.
+
+17. **Match steady state before comparing plant response.** Yaw-per-steer at matched speed
+    appeared 26% down, which reads exactly like an assist change. Restricting to steer held
+    within 0.05 and speed within 3 km/h across a 280 ms window, the two eras were identical
+    (ratio 1.02 and 1.00 at full lock). The unsettled comparison was measuring the bot's own
+    changed behaviour distribution **(measured 08-01)**. Rule 5 applies to the *settling state*,
+    not just to κ/v/load.
+
 ## Control-law lessons (constraints on future designs)
 
 - **Compensate latency/braking with ONSET, never GAIN.** Raising `brk_ff` causes branch-chatter

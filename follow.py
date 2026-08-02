@@ -453,7 +453,15 @@ def main() -> int:
 
 
     def vtrim_base():
-        return vnet.forward(vXf) if vnet is not None else np.ones(n)
+        # CLIP THE NET INTO THE MAP RANGE. forward() is unbounded and step() nudges
+        # shared weights on every credit/debit, so the net drifts far outside any sane
+        # multiplier range over weeks (measured 07-29: implied net mean -0.88; 08-01:
+        # +0.45, with per-station values well below 0). Unclipped, a drifted base eats
+        # the delta's entire authority: 08-01 had 313 stations pinned at the 0.80 floor
+        # while their delta was POSITIVE (+1.04 mean) and simply could not lift them.
+        # Clipped, base in [lo,hi] and |delta| <= hi-lo reaches every value in [lo,hi]
+        # from any base, so the delta can always correct the net. See docs/CONSTRAINTS.md.
+        return np.clip(vnet.forward(vXf), 0.80, 1.55) if vnet is not None else np.ones(n)
 
     vt_base = vtrim_base()
     vtrim_map = np.clip(vt_base + vdelta, 0.80, 1.55)   # EFFECTIVE map the cap reads
@@ -990,7 +998,12 @@ def main() -> int:
                                                   # corner tax (measured: g_util med 0.78 -> 0.62,
                                                   # laps flat 31.1). Debit at 0.98 unchanged.
     vtrim_lo, vtrim_hi = 0.80, 1.55               # map bounds
-    vtrim_dmax = 0.80                             # anti-windup bound on the delta STATE
+    vtrim_dmax = 0.75                             # anti-windup bound on the delta STATE.
+                                                  # exactly vtrim_hi - vtrim_lo: with the base
+                                                  # clipped into [lo,hi], this is the smallest
+                                                  # bound that still reaches every value in the
+                                                  # map range from any base. Larger is windup,
+                                                  # smaller silently strands stations at a bound.
     vtrim_quar = 20.0                             # s after a recovery/reset in which incidents do NOT teach
     brk_lock_slip = 2.0                           # brake anti-lock threshold
     brk_lock_mode = 0.0                           # 0 = combined slip (legacy), 1 = longitudinal lockup

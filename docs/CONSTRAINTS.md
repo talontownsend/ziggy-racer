@@ -34,6 +34,13 @@ rationale and an exit path.
    file within seconds, without a process restart, and every live experiment must run under a
    monitor that executes its own rollback.
 
+8. **Bounded learned state.** Every online-learned term must be bounded to the range it
+   operates over, and no term may consume another's authority. Where an artifact is a sum
+   (`map = clip(base + delta)`), the base must be clipped into the map range and the correction
+   bounded at exactly `hi - lo`, so any value in the range stays reachable from any base.
+   Learned artifacts are snapshot-restorable only as a *set*: a term is meaningless without the
+   terms it was learned against.
+
 ---
 
 ## Exceptions register

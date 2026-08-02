@@ -173,3 +173,9 @@ measured identical, so there is no reason to leave it off), all experimental key
 defaults, learner snapshotted to `recordings/snapshots/*_arm0801.npz`. The watchdog now ends
 TextInputHost, refocuses, and re-plugs the pad on its own - it has been self-healing for the
 last several hours without help.
+
+> **Retracted 08-01.** The TextInputHost claim above is wrong and the kill has been removed from
+> the watchdog. See `NIGHT_LOG_0801.md`: a 35 minute hands-off window with the foreground owner
+> sampled every 5 s ran 50 laps with 0 stalls and TextInputHost never took the foreground once.
+> The only observed thief was the Claude app itself while tool calls were being issued. The
+> refocus and pad re-plug behaviour is unaffected and stays.
