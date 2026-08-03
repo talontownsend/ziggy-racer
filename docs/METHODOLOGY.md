@@ -89,6 +89,27 @@ Rules marked **(measured)** were established by a specific experiment.
     value **(measured 08-02)**. Log commanded and delivered separately, and range-check anything
     crossing an FFI boundary: ctypes does not raise on overflow.
 
+20. **Never derive a quantity the telemetry already carries.** `meas_long` (car-local
+    longitudinal acceleration) sat unlogged in the packet for months while every longitudinal
+    conclusion was drawn from single-tick `dv/dt`. Because `spd_kmh` is logged rounded to
+    0.1 km/h, that estimator moves in ~2 m/s^2 steps at 72 Hz and correlates only **+0.291** with
+    the real channel (+0.945 when smoothed over 200 ms). Its *median* snaps between quantisation
+    levels, so it manufactures large, clean-looking, wrong deltas **(measured 08-02)**.
+
+21. **Lag-align before relating an input to a response.** Pedal to longitudinal acceleration is
+    **111 ms** (corr +0.718 at 8 ticks, +0.492 unaligned). Over-range throttle episodes have a
+    median length of 111 ms, exactly the lag, so an unaligned comparison measures the
+    acceleration the car is still carrying from *before* the episode and the effect vanishes
+    entirely. This caused me to retract a correct finding **(measured 08-02)**. The steering side
+    has its own measured lag of 196 ms; neither is optional.
+
+22. **When two solid measurements disagree, instrument the disputed quantity instead of
+    generating hypotheses.** Code inspection said the pad byte must wrap; the car said it did
+    not. I proposed the wrong interpreter, a different vgamepad version, and lag-smoothed brief
+    episodes. Logging `gp.report.bRightTrigger` directly settled it in ten minutes and showed the
+    reconstruction was right on 99.6% of ticks **(08-02)**. Read back what the device actually
+    received; never assume the write took the value you passed.
+
 ## Control-law lessons (constraints on future designs)
 
 - **Compensate latency/braking with ONSET, never GAIN.** Raising `brk_ff` causes branch-chatter
