@@ -839,7 +839,7 @@ def main() -> int:
                    "ff", "p_t", "i_t", "d_t", "cte_int", "cte_dot", "kappa_ff",
                    "lap_no", "lap_t", "sideslip", "plan_d0", "plan_L", "plan_deg",
                    "psi_deg", "km_max", "kap_car", "vcurve_kmh", "thr_cap", "yawrate",
-                   "pad_thr", "pad_brk", "meas_latg", "meas_long", "drive_slip", "brake_lock", "drive_spin", "alat_max_g", "fc_frac",
+                   "bind_code", "bind_free", "pad_thr", "pad_brk", "meas_latg", "meas_long", "drive_slip", "brake_lock", "drive_spin", "alat_max_g", "fc_frac",
                    "r_des", "r_meas", "e_r", "over", "under", "race_pos",
                    "y", "pitch_deg", "roll_deg",
                    "vt2_mult", "vt2_inside",
@@ -944,6 +944,7 @@ def main() -> int:
     race_t_last = 0.0; racing_seen = time.time(); last_recover = 0.0; last_map_check = 0.0
     no_telem_t0 = None
     last_replug = 0.0; last_blind_kick = 0.0      # no-telemetry streak / last-resort kick
+    bind_code = 0; bind_free = 0.0
     prev_tgt = None; desc_f = 0.0; brk_ff = 1.0   # brake feedforward (gain tunable; 0 disables)
     bla_tau = 0.0      # BRAKE LOOKAHEAD (s): engage/scale braking against the target extrapolated
                        # bla_tau seconds ahead (err_b = err - desc_f*tau). Fixes the systematic
@@ -1651,6 +1652,12 @@ def main() -> int:
             # from `safety` (tv<=20 m/s, corner) up to 1.0 (tv>=45 m/s, straight).
             safety_eff = safety + (1.0 - safety) * min(max((tv - 20.0) / 25.0, 0.0), 1.0)
             target_v = min(tv * safety_eff, speed_cap)
+            # BIND CODE: which term actually set target_v this tick. Logged rather than
+            # reconstructed, because every reconstruction of this chain so far has needed
+            # correcting. 1=plan/tv, 2=speed_cap, 3=v_curve*map_w, 4=pdg, 5=launch,
+            # 6=cte governor, 7=understeer, 8=zone multiplier.
+            bind_code = 1 if tv * safety_eff <= speed_cap else 2
+            bind_free = target_v
             # PLANNER speed coupling: slow for the curvature of the merge path actually
             # planned (v_curve = sqrt(a_lat/kappa)), and ease off if no feasible merge exists.
             v_curve = 0.0
@@ -1724,7 +1731,9 @@ def main() -> int:
                 if mbc_geo > 0.0 and mbc_geo_zone[i0]:
                     map_w = min(map_w, mbc_geo)
                 sfac = float(surface_fac[i0]) if scap_on > 0.0 else 1.0
-                target_v = min(target_v, v_curve * map_w * min(v_curve_trim, 1.0) * sfac)
+                _c = v_curve * map_w * min(v_curve_trim, 1.0) * sfac
+                if _c < target_v: bind_code = 3
+                target_v = min(target_v, _c)
                 if plan_degraded:
                     # don't DEADLOCK at standstill: min(target, spd) is 0 when spd=0, so a car
                     # that lost the merge (wedged/badly placed) never gets throttle to recover.
@@ -1745,14 +1754,18 @@ def main() -> int:
                     # already proven above for the near-straight rejoin coast-lock (v_rejoin =
                     # max(v_rejoin, spd + rejoin_gain)). Steering-side degradation is untouched:
                     # the planner still returns its best candidate for pursuit, exactly as today.
-                    target_v = min(target_v, max(spd + pdg_gain, 4.0))
+                    _c = max(spd + pdg_gain, 4.0)
+                    if _c < target_v: bind_code = 4
+                    target_v = min(target_v, _c)
             # launch speed cap: ramp the allowed speed from launch-cap up to full over
             # the first launch-settle-m of travel, so a grid/off-line start eases onto
             # the racing line under control instead of blasting off-line and overshooting
             if traveled < args.launch_settle_m:
                 frac = traveled / max(args.launch_settle_m, 1e-3)
                 launch_cap = args.launch_cap_kmh / 3.6
-                target_v = min(target_v, launch_cap + frac * (speed_cap - launch_cap))
+                _c = launch_cap + frac * (speed_cap - launch_cap)
+                if _c < target_v: bind_code = 5
+                target_v = min(target_v, _c)
             # off-line speed governor: if the car has drifted off the racing line, don't
             # floor toward a straight's target while sideways/off-track -- ease toward the
             # current speed so it can rejoin under control (more off => slower).
@@ -1761,23 +1774,27 @@ def main() -> int:
                 g = max(0.0, 1.0 - (acte - cte_soft) / max(cte_hard - cte_soft, 1e-3))
                 # crawl floor (4 m/s) so an off-corridor car at standstill can drive itself
                 # back onto the line instead of deadlocking at target~=0 (same trap as plan_degraded)
-                target_v = min(target_v, max(spd * (0.5 + 0.5 * g) + 1.0, 4.0))
+                _c = max(spd * (0.5 + 0.5 * g) + 1.0, 4.0)
+                if _c < target_v: bind_code = 6
+                target_v = min(target_v, _c)
             # UNDERSTEER (point #2): front washing wide (turning less than the path commands) ->
             # ease speed so it regains front grip and makes the corner instead of running off.
             if understeer:
-                target_v = min(target_v, spd * understeer_gain)
+                _c = spd * understeer_gain
+                if _c < target_v: bind_code = 7
+                target_v = min(target_v, _c)
             # #5 crest grip-margin: shave the target through the crest approach so the
             # (already-maxed) outward correction has grip to un-inside before the s704 grip-return.
             if cg_on > 0.0 and 600.0 <= s_of[i0] <= 680.0:
-                target_v = min(target_v, target_v * cg_on)
+                bind_code = 8; target_v = min(target_v, target_v * cg_on)
             if s7m_on > 0.0 and s7m_lo <= s_of[i0] <= s7m_hi:   # S7-approach margin (root-cause test)
-                target_v = min(target_v, target_v * s7m_on)
+                bind_code = 8; target_v = min(target_v, target_v * s7m_on)
             if cg_geo_on > 0.0 and cg_geo_mask[i0]:      # generalizable (survey-derived) form
-                target_v = min(target_v, target_v * cg_geo_on)
+                bind_code = 8; target_v = min(target_v, target_v * cg_geo_on)
             # ADAPTIVE CREST MARGIN: margin only in the approach of a hazard core the car has
             # actually slid at >= ACM_ENABLE times (self-selects S9; S7 stays free).
             if acm_on > 0.0 and acm_core_of[i0] >= 0 and acm_hits[acm_core_of[i0]] >= ACM_ENABLE:
-                target_v = min(target_v, target_v * acm_on)
+                bind_code = 8; target_v = min(target_v, target_v * acm_on)
             # (the temporal brake-integrity rate limiter tried here twice was removed: any
             # time-domain gate that suppresses target rises also extends dips -> phantom lifts
             # on fast sweepers. The spike source is fixed at the ROOT instead: v_curve is now
@@ -2405,7 +2422,7 @@ def main() -> int:
                            round(pl["kappa_merge_max"], 4) if pl is not None else 0.0,
                            round(kap_car, 4), round(v_curve * 3.6, 1), round(thr_cap, 3),
                            round(f.angvel_y, 3),
-                           round(pad_thr, 4), round(pad_brk, 4), round(f.ax / 9.81, 2), round(f.az / 9.81, 3), round(drive_slip, 2),
+                           bind_code, round(bind_free * 3.6, 1), round(pad_thr, 4), round(pad_brk, 4), round(f.ax / 9.81, 2), round(f.az / 9.81, 3), round(drive_slip, 2),
                            round(brake_lock, 2), round(drive_spin, 3),
                            round(alat_max_now / 9.81, 2), round(fc_frac, 2),
                            round(r_des, 3), round(r_meas_f, 3), round(e_r, 3),
