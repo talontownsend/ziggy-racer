@@ -1,0 +1,11 @@
+[
+ {"label":"CLAMP_SPIN15",
+  "arm":{"pad_clamp":1.0, "spin_thr":1.5},
+  "note":"spin_thr 2.5 recovered 3/4 of the clamp's damage (11->5 stalls, sideslip 22.0->15.5) and gave the best speed-vs-target ever measured (-7.78 vs -9.53). 1.5 fires on 1.08% of ticks for a 35.6x sideslip-risk lift, four times the coverage of 2.5. Tests whether more guard closes the remaining instability without giving back the delivery gain."},
+ {"label":"CLAMP_SPIN10",
+  "arm":{"pad_clamp":1.0, "spin_thr":1.0},
+  "note":"More guard again. If stability keeps improving while spd-tgt stays better than baseline, there is an optimum in here; if spd-tgt collapses back toward -9.5 the guard is just undoing the clamp and the family is dead."},
+ {"label":"CLAMP_SPIN15_TIGHTSLIP",
+  "arm":{"pad_clamp":1.0, "spin_thr":1.5, "slip_target":0.95},
+  "note":"Pairs the longitudinal guard with a modestly tighter combined ceiling. slip_target 0.85 alone was measured STABLE after pad_clamp (sideslip p99 7.40 vs 7.30) but cost too much throttle; 0.95 is half that tightening, now carried mostly by spin_thr instead."}
+]
