@@ -1,0 +1,8 @@
+[
+ {"label":"PADCLAMP_RETEST",
+  "arm":{"pad_clamp":1.0},
+  "note":"RE-TEST. 67.1% of the gap is delivery-limited (car >10 km/h below its OWN target) and the one measured delivery defect is the c_ubyte wrap destroying 20.4% of the pedal, now confirmed from the device byte. The 08-02 arm scored 30.62 with 8 stalls and 4.25% off-track, but it ran from a freshly restored map immediately after a restart while the learner was re-carving, and an 18-min clamp-on window on 08-02 evening showed off-track 0.60% vs 0.52% and sideslip p99 8.30 vs 7.90, i.e. no destabilisation at all. pad_thr now verifies the clamp is actually applied."},
+ {"label":"PADCLAMP_GUARDED",
+  "arm":{"pad_clamp":1.0, "spin_thr":2.5},
+  "note":"Same, plus the sharply-targeted wheelspin guard (fires on 0.20% of ticks for a 185x sideslip-risk lift). If the retest destabilises, this separates 'the extra power is unusable' from 'the extra power needs a guard the combined-slip derate cannot provide'."}
+]
