@@ -563,6 +563,15 @@ def main() -> int:
     # (wrapping) behaviour to A/B it. Logged pedal values stay PRE-clamp so the exposure
     # remains measurable from the log.
     pad_clamp = 0.0
+    ff_itrim = 0.25                               # integral bound while ff_thr is armed
+    ff_thr = 0.0                                  # feedforward throttle: seconds in which to
+                                                  # close the speed gap. 0.0 = OFF (legacy pure
+                                                  # feedback). Smaller = more aggressive; 0.30 s
+                                                  # reproduces roughly today's demand, 1.0 s is
+                                                  # much gentler. See the note at the use site.
+    a_full = 14.6                                 # measured full-pedal longitudinal accel (m/s^2),
+                                                  # steady-state fit 08-02 (g4 4500-6000 rpm).
+                                                  # Only used when ff_thr > 0.
     spin_thr = 0.0                                # drive-wheelspin derate threshold on the
                                                   # longitudinal slip_ratio. 0.0 = OFF (legacy,
                                                   # combined-slip signal only). Calibrate from
@@ -628,7 +637,7 @@ def main() -> int:
                    "slip_brake": slip_brake_gain,
                    "cte_soft": cte_soft, "cte_hard": cte_hard,
                    "planner_alat": args.planner_alat, "planner_alat_k": args.planner_alat_k,
-                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "k_counter": args.k_counter, "r_thr": args.r_thr,
+                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "ff_thr": 0.0, "a_full": 14.6, "ff_itrim": 0.25, "k_counter": args.k_counter, "r_thr": args.r_thr,
                    "understeer_gain": args.understeer_gain, "understeer_thr": args.understeer_thr},
                   open(args.tune_file, "w"), indent=2)
     except Exception:
@@ -1324,6 +1333,9 @@ def main() -> int:
                         planner.d0p_max   = float(_t.get("d0p_max",   planner.d0p_max))
                     resid_on = float(_t.get("resid_on", resid_on))
                     pad_clamp = float(_t.get("pad_clamp", pad_clamp))
+                    ff_thr = float(_t.get("ff_thr", ff_thr))
+                    a_full = float(_t.get("a_full", a_full))
+                    ff_itrim = float(_t.get("ff_itrim", ff_itrim))
                     spin_thr = float(_t.get("spin_thr", spin_thr))
                     bc_on = float(_t.get("bc_on", bc_on))
                     bc_w = float(_t.get("bc_w", bc_w))
@@ -1887,9 +1899,33 @@ def main() -> int:
                 # measured +2-4 km/h permanent error lap-wide (S9 control zone: 100% of ticks
                 # P-limited at thr 0.1-0.5). The integral supplies the standing pedal; P only
                 # trims transients. Anti-windup: no integration while the grip cap binds.
-                desired = kp_thr * err + thr_i
+                # FEEDFORWARD THROTTLE (ff_thr > 0 arms it; 0.0 = legacy pure feedback).
+                # The legacy law is `kp_thr * err`, which with a standing 13.4 km/h deficit gives
+                # 0.4 * 3.7 = 1.49 before the integral, i.e. saturated on essentially every tick.
+                # That creates a measured positive feedback loop: bigger error -> more demand ->
+                # more slip -> the combined-slip derate deepens -> LESS delivered throttle ->
+                # bigger error. It is the single mechanism behind eight consecutive failed
+                # relaxations (docs/JOINT_SEARCH_1_RESULT.md).
+                #
+                # Instead: ask for the acceleration that closes the gap in ff_thr seconds, and
+                # invert the measured powertrain map to get a pedal. Demand is then bounded by
+                # physics rather than by the error, so the loop cannot form. a_full is the
+                # measured full-pedal acceleration (steady-state fit 08-02: a ~= 13-16*pedal,
+                # full pedal ~14.6 m/s^2 in g4; see docs/WRAP_GROUND_TRUTH_0802.md).
+                if ff_thr > 0.0:
+                    a_req = (target_v - spd) / ff_thr          # m/s^2 needed to close the gap
+                    desired = max(0.0, a_req / max(a_full, 1.0)) + thr_i
+                else:
+                    desired = kp_thr * err + thr_i
                 if desired < thr_cap:
                     thr_i = min(thr_i + ki_thr * err * dt, 1.0)
+                if ff_thr > 0.0:
+                    # With feedforward carrying the demand, the integral's job is to correct the
+                    # POWERTRAIN MAP error, not to supply the pedal. Left at its legacy bound it
+                    # would wind to 1.0 in about half a second against a standing 3.7 m/s deficit
+                    # (ki_thr 0.5) and re-saturate the very demand the feedforward exists to
+                    # bound, making the arm meaningless.
+                    thr_i = min(thr_i, ff_itrim)
                 desired = min(desired, thr_cap)
                 throttle = min(desired, throttle + args.thr_rate)   # rate-limit up
                 # #3 anticipatory throttle-hold: when predicted load ~10 m ahead is rising into
