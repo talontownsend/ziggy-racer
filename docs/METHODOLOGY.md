@@ -84,9 +84,10 @@ Rules marked **(measured)** were established by a specific experiment.
 
 19. **Verify the actuator, not just the controller.** Nine percent of ticks commanded
     `throttle > 1.0`, which `vgamepad` wrote into a ctypes `c_ubyte` that wraps mod 256, so a
-    commanded 1.002 was delivered as 0.000 and 1.076 as 0.071 - about 10 m/s2 of missing drive
-    on a tenth of every lap, invisible in every log because the log records the *commanded*
-    value **(measured 08-02)**. Log commanded and delivered separately, and range-check anything
+    commanded 1.002 is delivered as 0.024 and 1.06-1.30 as 0.110 - confirmed from the device
+    byte itself (`pad_thr`), not inferred: 20.4% of the average pedal destroyed, worth **-5.87
+    m/s2** once lag-aligned. It was invisible in every log because the log recorded only the
+    *commanded* value **(measured 08-02, see WRAP_GROUND_TRUTH_0802.md)**. Log commanded and delivered separately, and range-check anything
     crossing an FFI boundary: ctypes does not raise on overflow.
 
 20. **Never derive a quantity the telemetry already carries.** `meas_long` (car-local
