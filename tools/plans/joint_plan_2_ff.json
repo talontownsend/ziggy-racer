@@ -1,0 +1,11 @@
+[
+ {"label":"FF_030",
+  "arm":{"ff_thr":0.30, "a_full":14.6, "ff_itrim":0.25},
+  "note":"Closest rung to today's effective aggression (demand 0.850 vs the legacy 1.489 at the measured 13.4 km/h deficit) while never saturating. If the loop diagnosis is right this should be the safest FF setting and should not be slower."},
+ {"label":"FF_060",
+  "arm":{"ff_thr":0.60, "a_full":14.6, "ff_itrim":0.25},
+  "note":"Half the aggression (demand 0.425). Tests whether a materially gentler, non-saturating demand reduces slip enough that the derate stops firing and net delivered throttle RISES."},
+ {"label":"FF_030_itrim_high",
+  "arm":{"ff_thr":0.30, "a_full":14.6, "ff_itrim":0.60},
+  "note":"Control for the integral bound: if FF_030 wins or loses mainly because of ff_itrim rather than the feedforward term, this separates the two."}
+]
