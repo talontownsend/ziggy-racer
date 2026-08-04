@@ -563,6 +563,7 @@ def main() -> int:
     # (wrapping) behaviour to A/B it. Logged pedal values stay PRE-clamp so the exposure
     # remains measurable from the log.
     pad_clamp = 0.0
+    gs_max = 0.0                                  # cap on grip_scale; 0.0 = OFF (legacy)
     ff_itrim = 0.25                               # integral bound while ff_thr is armed
     ff_thr = 0.0                                  # feedforward throttle: seconds in which to
                                                   # close the speed gap. 0.0 = OFF (legacy pure
@@ -637,7 +638,7 @@ def main() -> int:
                    "slip_brake": slip_brake_gain,
                    "cte_soft": cte_soft, "cte_hard": cte_hard,
                    "planner_alat": args.planner_alat, "planner_alat_k": args.planner_alat_k,
-                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "ff_thr": 0.0, "a_full": 14.6, "ff_itrim": 0.25, "k_counter": args.k_counter, "r_thr": args.r_thr,
+                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "ff_thr": 0.0, "a_full": 14.6, "ff_itrim": 0.25, "gs_max": 0.0, "k_counter": args.k_counter, "r_thr": args.r_thr,
                    "understeer_gain": args.understeer_gain, "understeer_thr": args.understeer_thr},
                   open(args.tune_file, "w"), indent=2)
     except Exception:
@@ -1337,6 +1338,7 @@ def main() -> int:
                     ff_thr = float(_t.get("ff_thr", ff_thr))
                     a_full = float(_t.get("a_full", a_full))
                     ff_itrim = float(_t.get("ff_itrim", ff_itrim))
+                    gs_max = float(_t.get("gs_max", gs_max))
                     spin_thr = float(_t.get("spin_thr", spin_thr))
                     bc_on = float(_t.get("bc_on", bc_on))
                     bc_w = float(_t.get("bc_w", bc_w))
@@ -1811,6 +1813,21 @@ def main() -> int:
             # crest = -21% grip, >1 in compressions). Track-agnostic physics.
             load_factor = min(max(1.0 + f.ay / 9.81, 0.55), 2.40)
             grip_scale = load_factor ** 0.705
+            # COMPRESSION MUST NOT OPEN THE THROTTLE BEYOND FULL PEDAL.
+            # thr_cap = max_throttle * fc_frac * slip_frac * grip_scale, and measured 08-03 on the
+            # 36.9% of the lap that is plan-bound and >10 km/h down: thr_cap exceeds 1.0 only when
+            # grip_scale ~= 1.4 (load_factor ~= 1.65), i.e. heavy transient compression. The
+            # controller then commands >1.0, vgamepad wraps it mod 256, and the delivered pedal
+            # collapses from a commanded 1.080 to 0.082 on 22% of those ticks -- losing 25.2% of
+            # the commanded pedal exactly where the car is trying hardest to reach its target.
+            # Delivering it in full instead (pad_clamp) was measured worse six times, because full
+            # power lands as the compression unloads and the car spins.
+            # Capping grip_scale at 1.0 does neither: the cap falls back to fc_frac (~0.77 there),
+            # the command never exceeds 1.0, the wrap cannot fire, and the pedal delivered is the
+            # friction-circle-appropriate value rather than a wrapped near-zero or a full-power
+            # transient. This is a TIGHTENING of an over-permissive term, not a relaxation.
+            if gs_max > 0.0:
+                grip_scale = min(grip_scale, gs_max)
             alat_max_now = (planner_alat + planner_alat_k * spd * spd) * grip_scale
             a_lat_now = abs(f.ax)                                   # measured lateral accel (m/s^2)
             fc_frac = math.sqrt(max(1.0 - (a_lat_now / max(alat_max_now, 1e-3)) ** 2, 0.0))
