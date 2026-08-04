@@ -1,0 +1,8 @@
+[
+ {"label":"GSMAX_100",
+  "arm":{"gs_max":1.0},
+  "note":"Cap grip_scale at 1.0 so transient compression cannot open thr_cap past full pedal. Primary mechanism metric: fraction of ticks commanding thr>1.0, baseline 9-22% depending on population, must go to ~0. Secondary: mean DELIVERED pad_thr, baseline 0.312, should rise. Stability must not move: sideslip p99 baseline ~7.4, off-track <0.8%."},
+ {"label":"GSMAX_115",
+  "arm":{"gs_max":1.15},
+  "note":"A softer cap. Keeps some compression credit while still bounding the command below the wrap threshold for most of the population. If GSMAX_100 costs too much on the non-wrapped 78%, this separates 'the cap level is wrong' from 'the whole idea is wrong'."}
+]
