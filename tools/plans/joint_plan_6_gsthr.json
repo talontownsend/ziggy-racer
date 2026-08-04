@@ -1,0 +1,5 @@
+[
+ {"label":"GSTHR_100",
+  "arm":{"gs_max":1.0},
+  "note":"Now applied to thr_cap ONLY, leaving alat_max/v_curve/fc_frac/g_util untouched. The lateral model stays honest and the only change is that the throttle command stops running past the pedal's physical range. PRIMARY metric: commanded thr>1.0 must fall to ~0 (baseline 9-22% by population) while mean DELIVERED pad_thr RISES from ~0.312. Stability must NOT move: sideslip p99 7.40, off-track 0.22%."}
+]
