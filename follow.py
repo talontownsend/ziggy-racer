@@ -1826,8 +1826,12 @@ def main() -> int:
             # the command never exceeds 1.0, the wrap cannot fire, and the pedal delivered is the
             # friction-circle-appropriate value rather than a wrapped near-zero or a full-power
             # transient. This is a TIGHTENING of an over-permissive term, not a relaxation.
-            if gs_max > 0.0:
-                grip_scale = min(grip_scale, gs_max)
+            # NOTE the cap is applied at the THROTTLE CAP only, further down, NOT here.
+            # grip_scale is consumed twice: here it scales alat_max_now (and therefore v_curve,
+            # fc_frac and g_util), and again in thr_cap. Capping it at source was measured 08-03
+            # and it shrinks the lateral grip model too, cutting corner-speed targets as a side
+            # effect: gs_max 1.0 applied here scored 32.41 (aborted) with sideslip p99 15.70,
+            # which is the opposite of the intended calming. The lateral model must stay honest.
             alat_max_now = (planner_alat + planner_alat_k * spd * spd) * grip_scale
             a_lat_now = abs(f.ax)                                   # measured lateral accel (m/s^2)
             fc_frac = math.sqrt(max(1.0 - (a_lat_now / max(alat_max_now, 1e-3)) ** 2, 0.0))
@@ -1881,7 +1885,15 @@ def main() -> int:
                                 max(0.15, 1.0 - (drive_spin - spin_thr) / max(spin_thr, 1e-3)))
             # crest throttle-ease: lift when the truck goes light over a crest (grip_scale<1)
             # -- prevents power-oversteer over crests (gating it OFF on straights caused 9% slides).
-            thr_cap = max_throttle * fc_frac * slip_frac * grip_scale
+            # gs_max: compression must not open the THROTTLE beyond full pedal. thr_cap exceeds
+            # 1.0 only when grip_scale ~= 1.4 (load_factor ~= 1.65), i.e. transient compression,
+            # and the controller then commands >1.0, which vgamepad wraps mod 256 -- a commanded
+            # 1.080 is delivered as 0.082 on 22% of the plan-bound deficit ticks. Delivering it
+            # in full instead (pad_clamp) was measured worse six times, because full power lands
+            # as the compression unloads. Capping it HERE ONLY leaves the lateral grip model
+            # untouched and simply stops the command running past the pedal's physical range.
+            _gs_thr = min(grip_scale, gs_max) if gs_max > 0.0 else grip_scale
+            thr_cap = max_throttle * fc_frac * slip_frac * _gs_thr
             brake_cap = max(fc_frac, 0.2)                           # ease braking while cornering hard
             # brake ANTI-LOCK: the brake had NO slip feedback, so hard braking LOCKED the wheels
             # (drive_slip spikes to 8-10, lateral g collapses to ~0.5g, the car skids straight and
