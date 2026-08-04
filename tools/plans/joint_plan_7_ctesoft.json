@@ -1,0 +1,8 @@
+[
+ {"label":"CTE_SOFT_25",
+  "arm":{"cte_soft":2.5},
+  "note":"The steering saturates at |cte| ~2.5 m (71% of full-lock ticks are PID-dominated with cte median 2.53 m, and |ff| never saturates anything) but the cte governor only arms at 5.0 m, so it binds on 1.3% of ticks and the car spends 34% of the lap at full lock with no authority left. Slowing raises the achievable curvature (envelope kappa_max ~ v^-1.294, so -10% speed buys +13% curvature), which is exactly what a saturated car needs. PRIMARY metric: fraction of on-track ticks at |steer|>0.97, baseline 34.4%, must fall. Secondary: |cte| p90 (baseline 3.07 m) and sideslip p99 (7.5)."},
+ {"label":"CTE_SOFT_35",
+  "arm":{"cte_soft":3.5},
+  "note":"Softer rung. If 2.5 over-slows, this separates 'the threshold is in the wrong place' from 'governing on cte is the wrong response to saturation'."}
+]
