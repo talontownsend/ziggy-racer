@@ -1,0 +1,8 @@
+[
+ {"label":"ILEAK_050",
+  "arm":{"cte_ileak":0.5},
+  "note":"2.0 s time constant. The error sign changes every ~6.1 s, so this decays a stale integral to 4.7% over one sign period while leaving it most of a corner to act. PRIMARY metric: fraction of ticks where the integral OPPOSES the current error, baseline 32.0%, must fall. Secondary: fraction at/near the 3.0 clamp (baseline 45.0%), |cte| p90 (3.07 m), full-lock fraction (34.4%)."},
+ {"label":"ILEAK_100",
+  "arm":{"cte_ileak":1.0},
+  "note":"1.0 s time constant, decaying a stale integral to 0.2% over one sign period. If 0.5 helps and 1.0 helps more, the leak is the mechanism; if 1.0 reverses it, the integral is doing real steady-state work (bank, camber, alignment bias) and the leak rate is a genuine trade rather than a free correctness fix."}
+]
