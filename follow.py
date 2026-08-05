@@ -638,7 +638,7 @@ def main() -> int:
                    "slip_brake": slip_brake_gain,
                    "cte_soft": cte_soft, "cte_hard": cte_hard,
                    "planner_alat": args.planner_alat, "planner_alat_k": args.planner_alat_k,
-                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "ff_thr": 0.0, "a_full": 14.6, "ff_itrim": 0.25, "gs_max": 0.0, "k_counter": args.k_counter, "r_thr": args.r_thr,
+                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "ff_thr": 0.0, "a_full": 14.6, "ff_itrim": 0.25, "gs_max": 0.0, "cte_ileak": 0.0, "aw_on": 0.0, "k_counter": args.k_counter, "r_thr": args.r_thr,
                    "understeer_gain": args.understeer_gain, "understeer_thr": args.understeer_thr},
                   open(args.tune_file, "w"), indent=2)
     except Exception:
@@ -985,6 +985,7 @@ def main() -> int:
         row = (1 - fv) * Mm[i0f] + fv * Mm[i0f + 1]
         return float(np.interp(np.log(min(ak, kcv[-1])), np.log(kcv), row))
     # --- chain-fix A/B candidates (2026-07-05), all default OFF; hot-reloadable ---
+    cte_ileak = 0.0    # first-order leak on the cross-track integrator, 1/s. 0 = OFF
     aw_on = 0.0        # #1 steer-clip anti-windup: decay cte_int when the wheel saturates
     cr_on = 0.0        # #2 correction-restore: un-damp p_t in the grip-return window
     th_on = 0.0        # #3 anticipatory throttle-hold on rotating-into-rising-load
@@ -1261,6 +1262,7 @@ def main() -> int:
                     ffm_gsc = float(_t.get("ffm_gsc", ffm_gsc))
                     crest_hold = float(_t.get("crest_hold", crest_hold))
                     aw_on = float(_t.get("aw_on", aw_on))
+                    cte_ileak = float(_t.get("cte_ileak", cte_ileak))
                     cr_on = float(_t.get("cr_on", cr_on))
                     th_on = float(_t.get("th_on", th_on))
                     hd_on = float(_t.get("hd_on", hd_on))
@@ -1500,6 +1502,20 @@ def main() -> int:
             raw_dot = (cte - cte_prev) / max(dt, 1e-3)   # D on the TRUE offset (bias is constant)
             cte_dot_f = (1.0 - CTE_D_BETA) * cte_dot_f + CTE_D_BETA * raw_dot
             cte_prev = cte
+            # LEAK. The integrator has a clamp but no leak, so it saturates and stays there:
+            # measured 08-04 over 398k on-track ticks, |cte_int| sits at/near its 3.0 clamp on
+            # 45.0% of ticks, flips sign only 4.9 times per lap, and after the wheel unpins it
+            # fails to unwind below half-clamp within 2.1 s on 65.2% of releases. It is a slow
+            # bias carrying stale information across corners, not an integral.
+            # The cost is exact: on 32.0% of ticks it OPPOSES the current cross-track error with
+            # |i_t| 0.208 against |p_t| 0.208 -- a 1.00x ratio, so it cancels the proportional
+            # correction outright, on a third of the lap, while the wheel is already saturated
+            # 34.4% of the time and has no authority to spare.
+            # The shipped aw_on decays it only when cte_ctrl*cte_int > 0, i.e. when it AGREES
+            # with the error and is helping; it does nothing in the opposing case.
+            # cte_ileak is a plain first-order leak toward zero, in units of 1/s. 0.0 = OFF.
+            if cte_ileak > 0.0:
+                cte_int *= max(0.0, 1.0 - cte_ileak * dt)
             cte_int = max(-CTE_INT_MAX, min(CTE_INT_MAX, cte_int + cte_ctrl * dt))
             kp_eff = kp / (1.0 + spd / KP_VSCALE)
             # LOAD-COMPENSATED FF (S9 crest fix, 07-05): the steer angle a given curvature
