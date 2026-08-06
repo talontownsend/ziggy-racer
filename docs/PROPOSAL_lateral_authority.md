@@ -74,11 +74,50 @@ full-lock share and `|cte|` first, then relax the derate as a second stage.
 
 Roughly 4 hours for stage 3, 3 more for stage 4.
 
-## What could make this wrong
+## The open risk, resolved (it was real, and the proposal survives)
 
-The car achieves only 0.59 of the modelled envelope curvature at full lock, which either means
-the envelope fit (`kappa_max ~= 3.86 v^-1.294`) is optimistic, or the car is not converting lock
-into rotation. The understeer flag is set on just 24.1% of full-lock ticks, so it is not simply
-understeer. **This is unresolved**, and if the true envelope is much lower than modelled then
-the wheel is nearer a real limit than this proposal assumes and bounding the correction will
-cost tracking. Stage 2 should settle it before any live window.
+The concern was that the car reaches only 0.59 of the modelled curvature envelope at full lock,
+so the wheel might be nearer a genuine limit than this assumes. Measured on **steady** full lock
+only (saturated >=200 ms, no brake, 54,756 ticks), p95 achieved curvature per speed bin:
+
+| speed km/h | achieved p95 | model `3.86 v^-1.294` | ratio |
+|---|---|---|---|
+| 80-100 | 0.03772 | 0.05518 | 0.68 |
+| 100-120 | 0.03393 | 0.04709 | 0.72 |
+| 120-140 | 0.02607 | 0.03735 | 0.70 |
+| 140-160 | 0.02145 | 0.03148 | 0.68 |
+| 160-190 | 0.01665 | 0.02611 | 0.64 |
+
+**The envelope in the notes is optimistic by 30-35% at every speed.** Refit on steady full-lock
+p95: `kappa_max = 4.273 * v^-1.429`. At steady full lock the understeer flag is set on just
+**3.3%** of ticks, sideslip is 1.2 deg and grip util 0.745, so the car is not sliding or pushing.
+It is simply at maximum steering angle: **when saturated, the wheel is at a real limit.**
+
+That formula is used **nowhere in `follow.py`** (only in a `tools/` docstring), so it is a
+descriptive fit for analysis and being wrong by 30% has no runtime consequence. It does mean the
+"0.3% infeasible" figure was measured against an envelope that does not exist.
+
+Recomputed against the measured envelope:
+
+| | assumed | measured |
+|---|---|---|
+| plan demands infeasible curvature | 0.3% | **1.0%** |
+| among full-lock ticks | 0.4% | **1.4%** |
+| median demand/limit at full lock | - | **0.57** |
+| share of lap with demand > 0.8 x limit | - | **4.0%** |
+
+**The premise holds and is stronger than first stated.** Even against the real, lower envelope,
+at the moments the wheel is pinned the path is asking for 57% of the curvature available. And
+the decisive pair does not depend on the envelope at all:
+
+    at full lock:   mean |ff| = 0.206     mean PID sum = 0.965
+
+The corner needs a fifth of the wheel. The correction demands all of it.
+
+## Remaining uncertainty
+
+The envelope refit is a p95 over steady full-lock samples, which is a lower bound on capability:
+the car only reaches those states where the controller took it. If some speeds are never driven
+at genuine maximum lock the fit understates them there. This does not affect the proposal, whose
+argument rests on the `ff` vs PID split, but it does mean `4.273 * v^-1.429` should be treated
+as measured-behaviour, not proven-capability.
