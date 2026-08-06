@@ -86,6 +86,29 @@ the *current* map (not to the 07-03 feature labels, which would discard everythi
 since) and recomputing `delta = current_map - clip(net(X))`. Done 08-02: `|delta|` mean 0.397
 to 0.032, 28.5% to 0% pinned at the bound, with the effective map reproduced exactly.
 
+## 4d. Check LOOP TIMING before trusting any scored window
+
+```bash
+python tools/loop_health.py
+```
+
+Exit code 1 gates a scored window. Reference from four clean 08-03/08-04 sessions: median
+14.00 ms, p99 16.00, p999 17.00, >33 ms 0.002-0.019%.
+
+**Why this exists.** On 08-05 the control loop's tail latency degraded 5-30x and it went unnoticed
+for a full day of A/B testing, because nothing watched it. It was found by accident while chasing
+an unrelated stall count, and by then several scored windows had been compared against baselines
+recorded on a materially different machine state.
+
+A 33 ms tick means the pad holds a stale command for two extra periods, about 0.8 m of travel at
+150 km/h, on a car that sits at full steering lock a third of the lap with no authority margin.
+
+**Diagnosis order when it fails:** machine uptime first (this box has a BSOD pattern every few
+days and degrades before it), then background load, then disk. Compare LIKE FOR LIKE -- use the
+last 250k rows of each log, because early-session rows are not representative, and check the
+column count, since a longer row is a plausible-looking confound that turned out to be innocent
+here (a 64-column log from the bad day was already degraded).
+
 ## 4b. After ANY file move or reorganisation
 ```bash
 python tools/_selftest_imports.py
