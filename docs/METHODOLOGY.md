@@ -130,6 +130,16 @@ Rules marked **(measured)** were established by a specific experiment.
     agreement with an independent measurement, never by how many conditions they impose
     **(08-06)**.
 
+25. **A scored window must contain exactly one `tune_hash`.** Since 2026-08-06 every log row
+    carries `tune_hash`, the md5[:8] of the live tune.json. Before it existed, no archived
+    window was attributable to a config: the arm keys were never logged, so the joint-search
+    arms of 08-02..08-04 cannot be rescored offline even though their logs survive. Trying to
+    reconstruct their windows from learner-snapshot mtimes produced three statistically
+    identical windows, which is equally consistent with the arm doing nothing and with the
+    mapping being wrong, and there is no way to separate those. Check it first:
+    `df.groupby('tune_hash').t.agg(['min','max'])`. Note every session opens with a transition,
+    because the watchdog re-adds `$addKeys` seconds after startup **(08-06)**.
+
 ## Control-law lessons (constraints on future designs)
 
 - **Compensate latency/braking with ONSET, never GAIN.** Raising `brk_ff` causes branch-chatter

@@ -109,6 +109,17 @@ last 250k rows of each log, because early-session rows are not representative, a
 column count, since a longer row is a plausible-looking confound that turned out to be innocent
 here (a 64-column log from the bad day was already degraded).
 
+## 4e. Confirm the window ran ONE config
+
+```bash
+python -c "import pandas as pd; d=pd.read_csv('recordings/follow_log.csv',usecols=['t','tune_hash']); print(d.groupby('tune_hash').t.agg(['min','max','count']))"
+```
+
+`tune_hash` (md5[:8] of the live tune.json, logged per tick since 08-06) is the only way to
+prove which ticks ran which arm. A window spanning two hashes is mixing configs and is not
+scoreable. Every session opens with a transition because the watchdog re-adds `$addKeys`
+seconds after startup, so always score from after it.
+
 ## 4b. After ANY file move or reorganisation
 ```bash
 python tools/_selftest_imports.py
