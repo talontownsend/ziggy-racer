@@ -75,6 +75,27 @@ across seven arms.
 - `tools/joint_search.py`, multi-axis A/B with mechanism metrics, auto-revert, learner restore
 - `tools/vtrim_refit_net.py`, refit the net to the CURRENT map, never the stored 07-03 labels
 
+## 2026-08-06: the instrument, not the car
+
+Three defects found in the measurement chain, one result about the car.
+
+| finding | detail |
+|---|---|
+| **`ab_arm.py` inflated every median by 0.71 s** | keyed laps by `(session, lap_no)`, but `lap_no` repeats within a follower session because the event restarts, so it merged ~4 real laps and reported the slowest. 211 laps counted as 50. Fixed; cross-validated to 0.01 s. The free tell was ticks-per-lap: 9153 where a 30 s lap is ~2070 |
+| **no window was attributable to a config** | arm keys were never logged, so 19 of the week's arms can never be rescored offline. `tune_hash` now logged per tick. It immediately exposed a config transition at the start of every session, from the watchdog re-adding `$addKeys` |
+| **arms rescored at zero farm cost** | the 5 with archived logs: no verdict flips bad-to-good; 2 were recorded for the wrong reason (spin substitution was pace-neutral with 15x off-track, not 4 s slow; the wrap fix read +0.47 s and is neutral) |
+| **`bind_code` decomposition** | the plan is the binding cap on **58.9%** of ticks with the car **20.0 km/h below it**; where the vtrim cap binds (36.3%) the car is already 4.6 km/h OVER. Of ticks under target, 66.2% are held by the `thr_cap` derate and only **1.8%** are actually out of engine |
+
+Closed without a window: **raising the vtrim ceiling.** 80% of stations sit at the 1.55 clip,
+which reads like a learner begging to be let off the leash. It is not: credit accrues at stations
+the car never approaches the cap at, and where the cap binds the car already exceeds it.
+
+Also on this date, three claims of mine were retracted after measurement: a -0.992 map-to-laptime
+correlation built from labels I had assigned myself (objectively paired: -0.139), and two
+explanations of the pad overflow (understeer-tracking, a confound; high-load cornering,
+backwards). The pre-existing account of that defect was correct and I should have trusted it.
+See METHODOLOGY rules 5, 23, 24, 25.
+
 ## What remains
 
 The steering saturates for **34.4% of the lap**, and it is the cross-track PID doing it, not
