@@ -28,6 +28,7 @@ from __future__ import annotations
 import argparse
 import csv
 import ctypes
+import hashlib
 import json
 import math
 import os
@@ -844,7 +845,8 @@ def main() -> int:
                    "r_des", "r_meas", "e_r", "over", "under", "race_pos",
                    "y", "pitch_deg", "roll_deg",
                    "vt2_mult", "vt2_inside",
-                   "bc_st", "bc_dst", "bc_w_eff"])   # appended: vtrim2 + BC-blend channels
+                   "bc_st", "bc_dst", "bc_w_eff",   # appended: vtrim2 + BC-blend channels
+                   "tune_hash"])                    # which tune.json was live on this tick
 
     def neutral():
         gp.left_joystick_float(x_value_float=0.0, y_value_float=0.0)
@@ -985,6 +987,7 @@ def main() -> int:
         row = (1 - fv) * Mm[i0f] + fv * Mm[i0f + 1]
         return float(np.interp(np.log(min(ak, kcv[-1])), np.log(kcv), row))
     # --- chain-fix A/B candidates (2026-07-05), all default OFF; hot-reloadable ---
+    tune_hash = "boot"  # md5[:8] of the live tune.json; segments a log by config
     cte_ileak = 0.0    # first-order leak on the cross-track integrator, 1/s. 0 = OFF
     aw_on = 0.0        # #1 steer-clip anti-windup: decay cte_int when the wheel saturates
     cr_on = 0.0        # #2 correction-restore: un-damp p_t in the grip-return window
@@ -1208,6 +1211,12 @@ def main() -> int:
             if frames % 30 == 0:                            # hot-reload tuning ~2x/sec
                 try:
                     _t = json.load(open(args.tune_file))
+                    # Fingerprint the config that is live on this tick. Without it, no past
+                    # window is attributable offline: the arm keys are not logged, so an
+                    # archived log cannot be segmented by which arm was running. That is why
+                    # the 08-02..08-04 joint-search arms cannot be rescored from their logs.
+                    tune_hash = hashlib.md5(
+                        json.dumps(_t, sort_keys=True).encode()).hexdigest()[:8]
                     safety = float(_t.get("safety", safety))
                     speed_cap = float(_t.get("speed_cap", speed_cap))
                     max_throttle = float(_t.get("max_throttle", max_throttle))
@@ -2482,7 +2491,8 @@ def main() -> int:
                            round(f.pos_y, 2), round(math.degrees(f.pitch), 2),
                            round(math.degrees(f.roll), 2),
                            round(vt2_mult, 4), round(vt2_inside, 2),
-                           round(bc_st_log, 3), round(bc_dst_log, 3), round(bc_w_eff, 2)])
+                           round(bc_st_log, 3), round(bc_dst_log, 3), round(bc_w_eff, 2),
+                           tune_hash])
             frames += 1
             if pathf is not None and pl is not None and frames % args.path_log_every == 0:
                 pathf.write(json.dumps({
