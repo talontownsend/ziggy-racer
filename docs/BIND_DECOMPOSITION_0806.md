@@ -112,44 +112,53 @@ The sawtooth is unambiguous:
 
 Delivered is exactly `commanded - 1.0`. This destroys **23.9% of all on-track pedal**.
 
-### Why fixing it keeps losing
+### Where it lives, measured
 
-**First attempt at an answer, RETRACTED.** The understeer flag is set on 48.6% of over-range
-ticks against 18.5% of in-range ticks, and I read that as the overflow acting as a throttle cut
-that fires when the car is understeering, i.e. a well-targeted accident. **Condition-matching
-destroys it.** Over-range commands require high `grip_scale`, meaning high load, meaning
-corners; understeer lives in corners too. Matched on |steer| x lateral-g x speed over 36 cells
-(41,277 over-range vs 138,870 in-range ticks):
+| | over-range | in-range |
+|---|---|---|
+| \|lateral g\| | 1.040 | 1.652 |
+| \|steer\| | 0.417 | 0.655 |
+| speed km/h | 153.3 | 125.1 |
+| drive_slip | 0.282 | 1.017 |
 
-| | understeer rate |
-|---|---|
-| over-range | 50.4% |
-| matched in-range | 47.9% |
-| difference | **+2.6 points**, and only 19/36 cells favour over-range |
+**56.8%** of over-range ticks are at \|lateral g\| < 1.0 and only **9.6%** above 2.5 g. `thr_cap`
+exceeds 1.0 from **vertical** load (susp_rear +0.537, susp_front +0.437) and correlates
+*negatively* with lateral g (-0.443). The wrap lives on **fast straights over compressions**,
+not in corners.
 
-That is a coin flip. The aggregate 30-point gap was pure confound (METHODOLOGY rule 5, which I
-should have applied before writing the claim down).
+### Two wrong explanations, both mine, both retracted
 
-**What survives.** The wrap concentrates in high-load cornering, and delivering the commanded
-value there (`pad_clamp`) measured worse six times, with a stability compensation attempted and
-failing too. So the demand is wrong *for high-load corners*. It is NOT selectively cutting
-during understeer, and the overflow is not a smart accidental controller, just a cut that lands
-where load is high.
+1. **"It tracks understeer."** Aggregate 48.6% vs 18.5%. Condition-matched on
+   \|steer\| x lateral-g x speed over 36 cells: 50.4% vs 47.9%, +2.6 points, 19/36 cells. A coin
+   flip. Over-range needs high `grip_scale`, understeer lives in corners, and the aggregate
+   mixed them.
+2. **"It lives in high-load cornering."** Measured above: it is the opposite. The load is
+   vertical, the sections are straight, and lateral g is *lower* than baseline.
 
-`gs_max=1.0` is still not an independent fix: capping `grip_scale` for `thr_cap` makes the
+Both claims reached a doc before they were tested. See METHODOLOGY rule 5.
+
+### The established account was already correct
+
+This is a rediscovery, not a new finding. The prior decomposition of this same defect recorded
+it on straights (0.53 g lat, steer 0.36, 153 km/h, 9.20% of ticks) and separated it from the
+combined-slip derate on corner exit, overlap 0.1%. Tonight's numbers reproduce it: 153.3 km/h,
+steer 0.417, 9.4% of ticks.
+
+Its remedy ordering also stands and explains the six failures without needing anything new:
+**`pad_clamp` restores drive on the straights, which raises corner ARRIVAL speed, while the EXIT
+stays taxed by the combined-slip derate. So it fails with off-tracks at corner ENTRIES. Fix
+corner-exit throttle authority first, then `pad_clamp`.**
+
+`gs_max=1.0` is not an independent alternative: capping `grip_scale` for `thr_cap` makes the
 demand <= 1.0, and on those ticks the controller wanted "as much as possible", so it delivers
 1.0 exactly as `pad_clamp` does.
 
-### What that actually means
+### Where that leaves it
 
-The controller asks for more than full throttle in high-load corners on ~9% of the lap, and an
-integer overflow is the only reason the car survives it. **Clamping cannot help, because
-clamping faithfully delivers a demand that is wrong there.** The fix is a demand law that does
-not ask for full throttle in that regime, which is a throttle-side redesign distinct from every
-`pad_clamp` arm, all of which changed delivery and left the demand alone.
+The blocker is not the demand law, which is reasonable in asking for full throttle on a straight.
+The blocker is that the car cannot absorb a faster corner arrival, because corner-exit authority
+is taxed by a derate that is itself compensating for saturated steering. **Every route converges
+on lateral authority**, which is also where the plan-bound 20 km/h deficit and the 34%-of-lap
+steering saturation point.
 
-What specifically is wrong with the demand in high-load corners is **not established**. The
-understeer hypothesis was the obvious candidate and it did not survive. That question is open.
-
-**Do not "fix the wrap" without fixing the demand first.** The wrap is currently load-bearing,
-and removing a load-bearing accident before replacing its function is how this gets slower.
+**Do not "fix the wrap" first.** It is load-bearing until exit authority exists to absorb it.
