@@ -101,6 +101,20 @@ class Frame:
     drivetrain: int = 0          # 0=FWD, 1=RWD, 2=AWD
     race_position: int = 0       # player's position in the race (1..N); 0 in FREE ROAM (no race).
                                  # The clean race-vs-freeroam signal: is_race_on/clock are 1 in BOTH.
+    # UNREAD UNTIL 08-05. The sled block carries the game's own PER-CORNER measurements, and
+    # the bot was inferring both quantities from single whole-car scalars: load from the vertical
+    # accelerometer (load_factor = 1 + ay/9.81, scaling BOTH alat_max and thr_cap), and
+    # longitudinal slip from TireCombinedSlip, which includes the lateral component and therefore
+    # behaves as a steering detector. Neither scalar can see load TRANSFER between axles, which is
+    # what decides understeer at entry and power-on oversteer at exit.
+    susp_fl: float = 0.0     # NormalizedSuspensionTravel, offset 68. 0 = full droop, 1 = full bump
+    susp_fr: float = 0.0
+    susp_rl: float = 0.0
+    susp_rr: float = 0.0
+    wheel_fl: float = 0.0    # WheelRotationSpeed rad/s, offset 100. Gives TRUE longitudinal slip
+    wheel_fr: float = 0.0
+    wheel_rl: float = 0.0
+    wheel_rr: float = 0.0
 
     @property
     def speed_kmh(self) -> float:
@@ -136,6 +150,8 @@ def parse_packet(data: bytes, dash_override: int | None = None) -> Frame | None:
     safl, safr, sarl, sarr = struct.unpack_from("<ffff", data, 164)   # slip ANGLE (lateral, rad)
     csfl, csfr, csrl, csrr = struct.unpack_from("<ffff", data, 180)   # COMBINED slip (~1=limit)
     drivetrain = struct.unpack_from("<i", data, 224)[0]              # 0=FWD 1=RWD 2=AWD
+    nsfl, nsfr, nsrl, nsrr = struct.unpack_from("<ffff", data, 68)    # normalized suspension travel
+    wrfl, wrfr, wrrl, wrrr = struct.unpack_from("<ffff", data, 100)   # wheel rotation speed, rad/s
 
     pos_x, pos_y, pos_z = struct.unpack_from("<fff", data, base + 0)
     speed = struct.unpack_from("<f", data, base + 12)[0]
@@ -158,6 +174,8 @@ def parse_packet(data: bytes, dash_override: int | None = None) -> Frame | None:
         slip_angle_fl=safl, slip_angle_fr=safr, slip_angle_rl=sarl, slip_angle_rr=sarr,
         combined_slip_fl=csfl, combined_slip_fr=csfr, combined_slip_rl=csrl, combined_slip_rr=csrr,
         drivetrain=drivetrain, race_position=racepos,
+        susp_fl=nsfl, susp_fr=nsfr, susp_rl=nsrl, susp_rr=nsrr,
+        wheel_fl=wrfl, wheel_fr=wrfr, wheel_rl=wrrl, wheel_rr=wrrr,
     )
 
 
