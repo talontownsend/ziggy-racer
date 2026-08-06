@@ -30,12 +30,19 @@ Splitting that apart gives an honest pace number and an honest stability number:
 
 No verdict flips from bad to good. Two records were wrong about **why**:
 
-1. **Spin substitution was not slow.** It was recorded as 4.0 s slower; it holds baseline pace
-   and goes off-track 15x more often. That matters because it is the arm that replaces the
-   combined-slip derate (which is really a steering detector) with true longitudinal spin. A
-   mechanism that is 4 s slower is dead. A mechanism that is fast but unstable is a stability
-   problem, and worth another attempt with the instability addressed rather than the idea
-   discarded.
+1. **Spin substitution was not slow, but it is still a dead end.** It was recorded as 4.0 s
+   slower; it actually holds baseline pace and goes off-track 15x more often. That corrects the
+   record on the arm replacing the combined-slip derate (which is really a steering detector)
+   with true longitudinal spin.
+
+   It does **not** revive the mechanism. The obvious hope was that it frees throttle in corners
+   and needs only a stability fix. Measured, it does not free throttle at all: mean throttle
+   **-0.019** versus baseline, only **+3.1%** at full lock, and clean-lap pace unmoved (+0.12).
+   Mean speed over all racing rows is -8.1 km/h, which is the crashes, not the driving.
+
+   So it buys no delivery and no pace and costs 15x the off-track rate. Correctly rejected, for
+   a different reason than recorded. This is an **8th independent data point** for the standing
+   conclusion that throttle delivery does not set the lap time on this car.
 
 2. **The throttle-wrap fix gained nothing.** It read +0.47 s better under the old detector and
    is neutral. Consistent with the standing conclusion that the fix is load-bearing (the pad
