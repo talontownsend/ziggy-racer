@@ -121,3 +121,32 @@ the car only reaches those states where the controller took it. If some speeds a
 at genuine maximum lock the fit understates them there. This does not affect the proposal, whose
 argument rests on the `ff` vs PID split, but it does mean `4.273 * v^-1.429` should be treated
 as measured-behaviour, not proven-capability.
+
+## Design correction (08-06, before any window was spent)
+
+An open-loop replay attempt caught two things.
+
+**1. `k < 1.0` removes full lock entirely, by construction.** The clip gives
+`|steer| <= |ff| + (1-|ff|)*k`, which for `k < 1` is strictly below 1.0 at every value of `ff`.
+So the proposed ladder 0.8 / 0.6 / 0.4 does not reserve headroom, it caps peak steering at
+roughly 0.84 / 0.68 / 0.52 of lock and the car can never command the top of its range. The plan
+demands infeasible curvature on 1.4% of full-lock ticks, so that capability is occasionally real.
+
+The parameter therefore conflates two separate ideas:
+
+- `k = 1.0` : the PID cannot push the total past full lock, but full lock remains reachable when
+  the feedforward asks for it. **This is the "no saturation" change actually argued for above.**
+- `k < 1.0` : additionally reserves headroom and caps peak steering below the mechanical limit.
+  A stronger intervention, and one that removes capability the car sometimes needs.
+
+**Revised ladder: 1.0 first.** Only if 1.0 shows the predicted effect should `k < 1` be tried,
+and then it should be understood as a peak-steering cap, not as reserving margin.
+
+**2. The offline replay in stage 2 is not possible with the current log schema.** `h_t` (the
+pursuit term) is not logged separately, and `steer` is recorded after the slew limiter, clamp and
+BC blend, so the correction cannot be reconstructed: `steer - ff` correlates **-0.013** with the
+logged `p_t + i_t + d_t`. Logging `h_t` and a pre-slew `steer_raw` would make the replay possible.
+
+The part of stage 2 that mattered was already settled analytically: `k_reserve = 0.0` is inert to
+zero counts after pad quantisation. What is lost is the ability to predict the ON behaviour
+offline, which means the first rung has to be measured live.
