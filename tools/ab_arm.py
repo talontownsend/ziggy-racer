@@ -152,6 +152,33 @@ def scan(t_from=None, t_to=None):
     }
 
 
+def snap_learner(tag):
+    """Copy vtrim_net + vtrim_delta aside. They must move TOGETHER: the map is an OUTPUT the
+    follower recomputes at startup, so restoring it alone does nothing."""
+    import shutil
+    out = []
+    for f in ("vtrim_net.npz", "vtrim_delta.npz"):
+        src = os.path.join(REC, f)
+        if os.path.exists(src):
+            dst = os.path.join(REC, "snapshots", f.replace(".npz", f"_{tag}.npz"))
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copy2(src, dst)
+            out.append(dst)
+    return out
+
+
+def restore_learner(tag):
+    """Put a snapshotted pair back. Requires a follower restart to take effect."""
+    import shutil
+    done = []
+    for f in ("vtrim_net.npz", "vtrim_delta.npz"):
+        src = os.path.join(REC, "snapshots", f.replace(".npz", f"_{tag}.npz"))
+        if os.path.exists(src):
+            shutil.copy2(src, os.path.join(REC, f))
+            done.append(f)
+    return done
+
+
 def now_t():
     """Current follower clock (last t in the log), or None if the log is unreadable."""
     try:
@@ -197,6 +224,8 @@ def main():
     arm = json.loads(a.arm)
     revert = json.loads(a.revert)
     sess0 = sessions_now()
+    snapped = snap_learner(f"PRE_{a.label}")
+    print(f"[{a.label}] learner snapshotted -> {[os.path.basename(x) for x in snapped]}", flush=True)
 
     print(f"[{a.label}] ARM {arm}  (revert -> {revert})", flush=True)
     write_tune(arm)
