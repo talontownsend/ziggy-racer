@@ -188,6 +188,9 @@ def main():
     ap.add_argument("--abort-stalls", type=int, default=5, help="stalls in any 15-min slice")
     ap.add_argument("--abort-med", type=float, default=30.8, help="median over >=25 laps "
                     "(lap_t-reset detector reads ~0.7 s lower than the pre-08-06 lap_no keying)")
+    ap.add_argument("--abort-lapmin", type=int, default=10,
+                    help="abort if the trailing 15 min has fewer than this many laps "
+                         "(healthy 24-29); catches arms no median gate can see")
     ap.add_argument("--check", type=float, default=180.0, help="monitor interval seconds")
     a = ap.parse_args()
 
@@ -247,6 +250,19 @@ def main():
                 if (t_score_from is not None and m15["n_laps"] >= 12
                         and m15["med"] and m15["med"] > a.abort_med):
                     aborted = f"ABORT: trailing median {m15['med']:.2f} over {m15['n_laps']} laps (limit {a.abort_med})"
+                    break
+                # LAP-RATE abort. The median gate above needs >=12 laps in the window, and a
+                # catastrophic arm produces almost none, so it can never fire on the worst
+                # failures. Measured 2026-08-06: k_reserve=0.8 removed full lock entirely, the
+                # car ran 48 s laps at 90.8% on-track, and produced 0-2 laps per 15-min slice
+                # for 75 minutes. Median gate: never met its sample floor. Stall gate: 1-2,
+                # under the limit. Every guard read nominal while the car limped.
+                # A healthy config does 24-29 laps per 15 min on this track.
+                if (t_score_from is not None and elapsed_min >= a.equil + 15.0
+                        and m15["n_laps"] < a.abort_lapmin):
+                    aborted = (f"ABORT: only {m15['n_laps']} laps in the trailing 15 min "
+                               f"(floor {a.abort_lapmin}); healthy is 24-29. The arm is not "
+                               f"completing laps, which no median-based gate can see.")
                     break
             print(
                 f"[{a.label}] t+{elapsed_min:5.1f}m  15min: laps={m15['n_laps'] if m15 else '?'} "
