@@ -639,7 +639,7 @@ def main() -> int:
                    "slip_brake": slip_brake_gain,
                    "cte_soft": cte_soft, "cte_hard": cte_hard,
                    "planner_alat": args.planner_alat, "planner_alat_k": args.planner_alat_k,
-                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "ff_thr": 0.0, "a_full": 14.6, "ff_itrim": 0.25, "gs_max": 0.0, "cte_ileak": 0.0, "aw_on": 0.0, "k_reserve": 0.0, "k_counter": args.k_counter, "r_thr": args.r_thr,
+                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "ff_thr": 0.0, "a_full": 14.6, "ff_itrim": 0.25, "gs_max": 0.0, "cte_ileak": 0.0, "aw_on": 0.0, "k_reserve": 1.0, "k_counter": args.k_counter, "r_thr": args.r_thr,
                    "understeer_gain": args.understeer_gain, "understeer_thr": args.understeer_thr},
                   open(args.tune_file, "w"), indent=2)
     except Exception:
@@ -989,7 +989,10 @@ def main() -> int:
         return float(np.interp(np.log(min(ak, kcv[-1])), np.log(kcv), row))
     # --- chain-fix A/B candidates (2026-07-05), all default OFF; hot-reloadable ---
     tune_hash = "boot"  # md5[:8] of the live tune.json; segments a log by config
-    k_reserve = 0.0    # clip cross-track correction to (1-|ff|)*k_reserve. 0 = OFF
+    k_reserve = 1.0    # clip cross-track correction to (1-|ff|)*k_reserve. 0 = OFF.
+                       # DEPLOYED 08-06 at 1.0: anti-windup, full lock still reachable.
+                       # k<1 makes |steer| <= |ff|+(1-|ff|)*k, i.e. below full lock:
+                       # 0.8 measured 0.0% full lock, 90.8% on-track, 48 s laps.
     kr_clip = 0; steer_raw = 0.0                 # logged lateral diagnostics
     cte_int_prev_kr = 0.0                        # last un-clipped integrator value
     cte_ileak = 0.0    # first-order leak on the cross-track integrator, 1/s. 0 = OFF
