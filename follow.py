@@ -639,7 +639,7 @@ def main() -> int:
                    "slip_brake": slip_brake_gain,
                    "cte_soft": cte_soft, "cte_hard": cte_hard,
                    "planner_alat": args.planner_alat, "planner_alat_k": args.planner_alat_k,
-                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "ff_thr": 0.0, "a_full": 14.6, "ff_itrim": 0.25, "gs_max": 0.0, "cte_ileak": 0.0, "aw_on": 0.0, "k_counter": args.k_counter, "r_thr": args.r_thr,
+                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "ff_thr": 0.0, "a_full": 14.6, "ff_itrim": 0.25, "gs_max": 0.0, "cte_ileak": 0.0, "aw_on": 0.0, "k_reserve": 0.0, "k_counter": args.k_counter, "r_thr": args.r_thr,
                    "understeer_gain": args.understeer_gain, "understeer_thr": args.understeer_thr},
                   open(args.tune_file, "w"), indent=2)
     except Exception:
@@ -988,6 +988,8 @@ def main() -> int:
         return float(np.interp(np.log(min(ak, kcv[-1])), np.log(kcv), row))
     # --- chain-fix A/B candidates (2026-07-05), all default OFF; hot-reloadable ---
     tune_hash = "boot"  # md5[:8] of the live tune.json; segments a log by config
+    k_reserve = 0.0    # clip cross-track correction to (1-|ff|)*k_reserve. 0 = OFF
+    cte_int_prev_kr = 0.0                        # last un-clipped integrator value
     cte_ileak = 0.0    # first-order leak on the cross-track integrator, 1/s. 0 = OFF
     aw_on = 0.0        # #1 steer-clip anti-windup: decay cte_int when the wheel saturates
     cr_on = 0.0        # #2 correction-restore: un-damp p_t in the grip-return window
@@ -1272,6 +1274,7 @@ def main() -> int:
                     crest_hold = float(_t.get("crest_hold", crest_hold))
                     aw_on = float(_t.get("aw_on", aw_on))
                     cte_ileak = float(_t.get("cte_ileak", cte_ileak))
+                    k_reserve = float(_t.get("k_reserve", k_reserve))
                     cr_on = float(_t.get("cr_on", cr_on))
                     th_on = float(_t.get("th_on", th_on))
                     hd_on = float(_t.get("hd_on", hd_on))
@@ -1592,7 +1595,23 @@ def main() -> int:
             p_t = kp_eff * cte_ctrl * _corr_p * _fsc
             i_t = ki * cte_int
             d_t = kd * cte_dot_f * corr
-            steer = STEER_SIGN * (ff + h_t + p_t + i_t + d_t)
+            # --- k_reserve: give the FEEDFORWARD first claim on the actuator ---------------
+            # Measured 08-06 over 485k ticks: the wheel is at full lock 31.9% of the lap, but
+            # |ff| never once exceeds 0.97 and 97.9% of full-lock time is PID-dominated at a
+            # median |cte| of 1.62 m. At full lock, mean |ff| is 0.206 against a mean PID sum of
+            # 0.965: the corner needs a fifth of the wheel and the correction demands all of it.
+            # Saturating leaves nothing to answer a disturbance with, which is what the thr_cap
+            # derate exists to cover. Clip the correction to the authority the path is not using.
+            # 0.0 = OFF (exactly the previous expression). See docs/PROPOSAL_lateral_authority.md.
+            _corr_sum = h_t + p_t + i_t + d_t
+            if k_reserve > 0.0:
+                _avail = max(0.0, 1.0 - abs(ff)) * k_reserve
+                _clipped = max(-_avail, min(_avail, _corr_sum))
+                if _clipped != _corr_sum:
+                    cte_int = cte_int_prev_kr        # correction is clipped -> do not integrate
+                _corr_sum = _clipped
+            cte_int_prev_kr = cte_int
+            steer = STEER_SIGN * (ff + _corr_sum)
 
             # ===== BC STEER-ONLY BLEND (upstream of ALL safety overrides) =====
             # Blend the cloned policy's steer into the base command here, so the oversteer
