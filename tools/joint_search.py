@@ -155,7 +155,7 @@ def main() -> int:
     ap.add_argument("--equil", type=float, default=25.0)
     ap.add_argument("--score", type=float, default=40.0)
     ap.add_argument("--base-score", type=float, default=35.0)
-    ap.add_argument("--abort-med", type=float, default=31.5)
+    ap.add_argument("--abort-med", type=float, default=30.8)  # -0.7: detector fix 08-06
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
 

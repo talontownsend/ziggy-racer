@@ -111,6 +111,25 @@ Rules marked **(measured)** were established by a specific experiment.
     reconstruction was right on 99.6% of ticks **(08-02)**. Read back what the device actually
     received; never assume the write took the value you passed.
 
+23. **Validate the lap detector before trusting a single lap time.** `lap_no` is NOT unique
+    within a follower session: the event restarts and numbering begins again, so keying laps by
+    `(session, lap_no)` merged ~4 real laps per group and reported `max(lap_t)` across them.
+    `ab_arm.py` did this from the beginning, which put **+0.71 s on the median and +0.48 s on
+    the best**, and reported 50 laps where 211 existed. Every median in docs/ dated before
+    2026-08-06 is on the inflated scale, and the bias varies per log with how often the event
+    restarted, so cross-log comparisons on the old scale are unreliable in both directions.
+    The check that catches it costs nothing: **ticks per detected lap**. A 30 s lap at 69 Hz is
+    ~2070 ticks; the groups held 9153. Any detector whose laps contain several times the
+    expected number of samples is merging laps. Segment on `lap_t` resets, require the run to
+    begin at `lap_t<0.5` and end at a reset, and print the rejection reasons **(08-06)**.
+
+24. **A stricter filter is not automatically a better one.** Replacing the reset detector with
+    a "strict" `lap_no`-keyed one that demanded start-line, rollover and on-track evidence felt
+    more rigorous and was measurably worse: it inherited the merge bias its extra conditions
+    could not see. The original detector had agreed with truth to 0.01 s. Rank detectors by
+    agreement with an independent measurement, never by how many conditions they impose
+    **(08-06)**.
+
 ## Control-law lessons (constraints on future designs)
 
 - **Compensate latency/braking with ONSET, never GAIN.** Raising `brk_ff` causes branch-chatter

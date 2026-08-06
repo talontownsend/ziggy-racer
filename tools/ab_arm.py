@@ -11,9 +11,17 @@
 Usage:
   python tools/ab_arm.py --label ffm020 \
       --arm '{"ffm_w":0.20}' --revert '{"ffm_w":0.15}' \
-      --equil 30 --score 45 --abort-stalls 4 --abort-med 31.0
+      --equil 30 --score 45 --abort-stalls 4 --abort-med 30.8
 
 Prints a structured result block; exit code 0 = window scored, 2 = aborted, 3 = voided.
+
+DETECTOR CHANGE 2026-08-06: laps are segmented on lap_t RESETS, not keyed by lap_no.
+lap_no repeats within a follower session (the event restarts and numbering begins again),
+so the old keying merged ~4 real laps per group and reported max(lap_t) across them. It
+read +0.71 s on the median and +0.48 s on the best, and undercounted 211 laps as 50.
+Every median in docs/ written before this date is on the inflated scale; subtract roughly
+0.7 s to compare, and note the bias varies per log with how often the event restarted.
+Abort thresholds have been shifted down to match.
 """
 import argparse
 import csv
@@ -57,7 +65,12 @@ def scan(t_from=None, t_to=None):
     seg = np.hypot(*(np.roll(line, -1, 0) - line).T)
     s_of = np.concatenate([[0.0], np.cumsum(seg)])[:-1]
 
-    laps, stalls, comp = {}, [], []
+    laps, stalls, comp = [], [], []
+    # Lap state for the lap_t-RESET detector. lap_no is NOT unique within a follower
+    # session: the event restarts and lap numbering begins again, so keying laps by
+    # (sess, lap_no) merges ~4 real laps and reports max(lap_t) over all of them. On a
+    # 211-lap window that read +0.71 s on the median and +0.48 s on the best.
+    lp_lt, lp_n, lp_ok, lp_valid, lp_pt = None, 0, 0, False, None
     srun, sess, prev = 0, 0, None
     cur, prev_s = {}, None
     sess_start = {}
@@ -71,10 +84,12 @@ def scan(t_from=None, t_to=None):
             if prev is not None and t < prev - 5:
                 sess += 1
                 cur, prev_s, srun = {}, None, 0
+                lp_lt, lp_n, lp_ok, lp_valid, lp_pt = None, 0, 0, False, None
             prev = t
             sess_start.setdefault(sess, t)
             if float(r["race_pos"]) < 1:
                 srun, prev_s = 0, None
+                lp_lt, lp_n, lp_ok, lp_valid, lp_pt = None, 0, 0, False, None
                 continue
             if t_from is not None and t < t_from:
                 continue
@@ -89,9 +104,19 @@ def scan(t_from=None, t_to=None):
             else:
                 srun = 0
             lt = float(r["lap_t"])
-            if 24 < lt < 70:
-                k = (sess, int(float(r["lap_no"])))
-                laps[k] = max(laps.get(k, 0), lt)
+            if lp_lt is not None and lt < lp_lt - 0.05:
+                # lap_t reset: the lap that just ended finished at lp_lt
+                if lp_valid and lp_n >= 50 and 24 < lp_lt < 70 and lp_ok / lp_n > 0.97:
+                    laps.append(lp_lt)
+                lp_n, lp_ok, lp_valid = 0, 0, lt < 0.5   # next lap began at the line?
+            else:
+                if lp_lt is None:
+                    lp_valid = lt < 0.5
+                if lp_pt is not None and t - lp_pt > 2.0:
+                    lp_valid = False                     # telemetry gap inside the lap
+            lp_n += 1
+            lp_ok += 1 if float(r.get("on_track", 1)) > 0.5 else 0
+            lp_lt, lp_pt = lt, t
             if prev_s is not None and sm < prev_s - 200:
                 cur = {}
             for g in (430, 800):
@@ -113,7 +138,7 @@ def scan(t_from=None, t_to=None):
             ded += 1
         last = (s, t)
 
-    lts = sorted(laps.values())
+    lts = sorted(laps)
     return {
         "n_laps": len(lts),
         "med": float(np.median(lts)) if lts else None,
@@ -161,7 +186,8 @@ def main():
     ap.add_argument("--equil", type=float, default=30.0, help="equilibration minutes")
     ap.add_argument("--score", type=float, default=45.0, help="scoring minutes")
     ap.add_argument("--abort-stalls", type=int, default=5, help="stalls in any 15-min slice")
-    ap.add_argument("--abort-med", type=float, default=31.5, help="median over >=25 laps")
+    ap.add_argument("--abort-med", type=float, default=30.8, help="median over >=25 laps "
+                    "(lap_t-reset detector reads ~0.7 s lower than the pre-08-06 lap_no keying)")
     ap.add_argument("--check", type=float, default=180.0, help="monitor interval seconds")
     a = ap.parse_args()
 
