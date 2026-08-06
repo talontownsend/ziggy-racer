@@ -846,7 +846,8 @@ def main() -> int:
                    "y", "pitch_deg", "roll_deg",
                    "vt2_mult", "vt2_inside",
                    "bc_st", "bc_dst", "bc_w_eff",   # appended: vtrim2 + BC-blend channels
-                   "tune_hash"])                    # which tune.json was live on this tick
+                   "tune_hash",                     # which tune.json was live on this tick
+                   "h_t", "steer_raw", "kr_clip"])  # lateral decomposition (08-06)
 
     def neutral():
         gp.left_joystick_float(x_value_float=0.0, y_value_float=0.0)
@@ -989,6 +990,7 @@ def main() -> int:
     # --- chain-fix A/B candidates (2026-07-05), all default OFF; hot-reloadable ---
     tune_hash = "boot"  # md5[:8] of the live tune.json; segments a log by config
     k_reserve = 0.0    # clip cross-track correction to (1-|ff|)*k_reserve. 0 = OFF
+    kr_clip = 0; steer_raw = 0.0                 # logged lateral diagnostics
     cte_int_prev_kr = 0.0                        # last un-clipped integrator value
     cte_ileak = 0.0    # first-order leak on the cross-track integrator, 1/s. 0 = OFF
     aw_on = 0.0        # #1 steer-clip anti-windup: decay cte_int when the wheel saturates
@@ -1604,14 +1606,17 @@ def main() -> int:
             # derate exists to cover. Clip the correction to the authority the path is not using.
             # 0.0 = OFF (exactly the previous expression). See docs/PROPOSAL_lateral_authority.md.
             _corr_sum = h_t + p_t + i_t + d_t
+            kr_clip = 0
             if k_reserve > 0.0:
                 _avail = max(0.0, 1.0 - abs(ff)) * k_reserve
                 _clipped = max(-_avail, min(_avail, _corr_sum))
                 if _clipped != _corr_sum:
                     cte_int = cte_int_prev_kr        # correction is clipped -> do not integrate
+                    kr_clip = 1
                 _corr_sum = _clipped
             cte_int_prev_kr = cte_int
             steer = STEER_SIGN * (ff + _corr_sum)
+            steer_raw = steer          # pre-slew, pre-clamp, pre-blend controller output
 
             # ===== BC STEER-ONLY BLEND (upstream of ALL safety overrides) =====
             # Blend the cloned policy's steer into the base command here, so the oversteer
@@ -2511,7 +2516,8 @@ def main() -> int:
                            round(math.degrees(f.roll), 2),
                            round(vt2_mult, 4), round(vt2_inside, 2),
                            round(bc_st_log, 3), round(bc_dst_log, 3), round(bc_w_eff, 2),
-                           tune_hash])
+                           tune_hash,
+                           round(h_t, 4), round(steer_raw, 4), kr_clip])
             frames += 1
             if pathf is not None and pl is not None and frames % args.path_log_every == 0:
                 pathf.write(json.dumps({
