@@ -87,3 +87,53 @@ authority and the derate becomes relaxable; until then it is holding the car tog
 are not braking. The speed controller is voluntarily asking for less than it is allowed while
 the car is 28.8 km/h under target. That is not explained by the derate and has not been
 investigated. It is the one throttle-side question this decomposition opens rather than closes.
+
+## The 29.6%, resolved: the demand law is wrong and a byte overflow is hiding it
+
+The unexplained ticks are the pad wrap, still live (`pad_clamp` defaults to 0.0). Measured over
+485,494 on-track ticks:
+
+- `thr_cap > 1.0` on **18.3%** of ticks (max 1.854), because
+  `thr_cap = max_throttle * fc_frac * slip_frac * grip_scale` and `grip_scale = load_factor^0.705`
+  exceeds 1 under load. A grip multiplier above 1 is meaningful for `alat_max`. For a **pedal**
+  it is meaningless.
+- commanded throttle exceeds 1.0 on **9.4%** of ticks, and `vgamepad` writes it into a
+  `c_ubyte` that wraps mod 256.
+
+The sawtooth is unambiguous:
+
+| commanded | n | delivered | a correct pad |
+|---|---|---|---|
+| 1.0-1.2 | 31697 | 0.098 | 1.000 |
+| 1.2-1.4 | 7019 | 0.264 | 1.000 |
+| 1.4-1.6 | 2275 | 0.490 | 1.000 |
+| 1.6-1.8 | 4682 | 0.690 | 1.000 |
+| 1.8-2.0 | 462 | 0.816 | 1.000 |
+
+Delivered is exactly `commanded - 1.0`. This destroys **23.9% of all on-track pedal**.
+
+### Why fixing it keeps losing
+
+The wrap is **not** uniformly distributed. The understeer flag is set on **48.6%** of over-range
+ticks against 31.5% overall. So the overflow acts as a throttle cut that fires preferentially
+when the car is understeering, which is exactly when a throttle cut is correct. Delivering the
+commanded value instead (`pad_clamp`) measured worse six times, and pairing it with a stability
+compensation (`slip_target` 1.05 -> 0.85) did not rescue it.
+
+`gs_max=1.0` is **not** an independent fix: capping `grip_scale` for `thr_cap` makes the demand
+<= 1.0, and on exactly those ticks the controller wanted "as much as possible", so it delivers
+1.0 just as `pad_clamp` does. The two are equivalent where it matters.
+
+### What that actually means
+
+The controller asks for full throttle while the car is understeering, on ~9% of the lap, and the
+only reason the car stays on the road is an integer overflow. **The defect is the demand law,
+not the pad.** Clamping cannot help, because clamping faithfully delivers a wrong demand.
+
+The fix is for the demand law not to ask for full throttle under understeer in the first place.
+`understeer_gain` and the `under` flag already exist and are evidently not doing enough. That is
+a throttle-side redesign, distinct from every `pad_clamp` arm tried so far, all of which changed
+delivery while leaving the demand untouched.
+
+**Do not "fix the wrap" without fixing the demand first.** The wrap is currently load-bearing,
+and removing a load-bearing accident before replacing its function is how this gets slower.
