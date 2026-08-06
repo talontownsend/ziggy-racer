@@ -18,7 +18,12 @@ Rules marked **(measured)** were established by a specific experiment.
    (a print-only "HARD ABORT" once let a failed arm run 40 minutes).
 5. **Compare condition-matched, never aggregate.** Aggregate decel medians "changed -8%" after a
    game update; speed-matched bins showed ±1 m/s² **(measured)**. Match κ/v/load/brake for
-   steering probes.
+   steering probes. **Apply it BEFORE writing the claim down, not after.** On 08-06 the pad
+   overflow looked like a targeted understeer cut: 48.6% understeer on over-range ticks vs 18.5%
+   in-range. Matched on |steer| x lateral-g x speed across 36 cells it is 50.4% vs 47.9%, +2.6
+   points, 19/36 cells, a coin flip. Over-range needs high `grip_scale` = high load = corners,
+   and understeer lives in corners. The confound was structural and obvious in hindsight, and the
+   claim had already reached a doc, a commit message and a memory file before it was tested.
 6. **Fresh windows, session-aware scans.** Cumulative windows double-count old bad periods;
    follower restarts reset `t` in the log; watchdog restarts silently disarm hot keys mid-window
    (log effective-state columns; a restarted window is void).
