@@ -6,6 +6,20 @@ scored window or a structural argument, not an opinion. **Read this before propo
 Baseline through all of it: bot **29.84-30.48 s** median. Human **26.818 s** median / 26.207 best,
 same car, same track, same morning (08-02, 48 clean laps). Gap **~3.25 s**.
 
+> **MEASUREMENT CAVEAT (added 2026-08-06).** Every result below was scored with
+> `ab_arm.py` before its lap detector was fixed. It keyed laps by `(session, lap_no)`,
+> but `lap_no` repeats within a follower session because the event restarts and
+> numbering begins again, so it merged ~4 real laps per group and reported `max(lap_t)`
+> across them: **+0.71 s on the median, +0.48 s on the best**, 211 laps reported as 50.
+>
+> The bias is not random. An arm that causes more incidents causes more event restarts,
+> which merges more laps, which inflates its median. **The error correlates with incident
+> rate, not with speed.** A "worse" verdict below may therefore reflect restart frequency
+> rather than lap time. The closures driven by structure (brake unreachable, path inert,
+> AWD derate) are unaffected; the closures driven by a scored median are not, and any arm
+> whose verdict was near the noise floor deserves a rerun on the fixed detector before it
+> is treated as settled. See METHODOLOGY rules 23-24.
+
 ## The one thing that worked
 
 | change | result | why it was different |
