@@ -52,3 +52,50 @@ recoverable. **The throttle side is closed on its own terms**, not merely blocke
 
 `k_reserve = 1.0` stays deployed: it improves saturation and tracking measurably and costs
 nothing, but it is not a lap-time change and should not be recorded as one.
+
+## Stage 4 rung 2: slip_target 1.45 — ABORTED, and it refutes the mechanism
+
+`drive_slip` at full lock runs ~1.48, so 1.45 essentially removes the derate rather than
+relaxing it. It destabilised the car and the abort fired at t+22.6m:
+
+| t | laps/15min | median | stalls |
+|---|---|---|---|
+| +15.5m | 18 | 30.70 | 1 |
+| +19.3m | 14 | 30.84 | 2 |
+| +22.6m | 11 | 31.59 | 4 |
+| | | | **ABORT at 6** |
+
+**The derate is load-bearing for stability, and fixing the steering saturation did not make it
+removable.** That contradicts the mechanism argued throughout this session: that the derate
+exists to cover for a wheel with no authority in reserve. The wheel now has reserve
+(`k_reserve=1.0`, full-lock share 32% -> 25%), the derate was removed, and the car became
+unstable anyway.
+
+So the throttle side is closed **on its own terms**, not blocked by the lateral controller. The
+remaining gap to the human is not hiding behind the derate.
+
+## Stage 4, complete
+
+| slip_target | result |
+|---|---|
+| 1.05 (baseline) | 30.25–30.41 |
+| 1.25 | **null** — cap binding at full lock 45.4% -> 36.0%, throttle +10%, lap time 30.41 -> 30.40 |
+| 1.45 | **aborted at 23 min** — stalls 1 -> 6, lap rate 18 -> 11 |
+
+Relaxing it does nothing; removing it breaks the car. There is no setting between "no effect"
+and "unstable" that produces lap time.
+
+## The harness fixes paid for themselves the same day
+
+Both were written this morning after the k_reserve ladder's rung 2 ran 75 minutes with every
+guard nominal and cost 1.8 s/lap of learner damage. On this rung:
+
+- **The abort fired at 22.6 min** instead of never (stall gate; the lap-rate gate was 1 lap away
+  from firing too, at 11 against a floor of 10).
+- **`ab_arm` snapshotted the learner automatically** before arming, so the restore point existed
+  without anyone remembering to take one. The 23 minutes still cost the map (window-min 1.4160 ->
+  1.2729) and ~0.6 s/lap; restoring `PRE_stage4_slip145` brought it back to 1.3999, verified by
+  reconstruction and by hash.
+
+A destructive arm went from 75 minutes and a manual hunt for a restore point, to 23 minutes and a
+two-minute rollback.
