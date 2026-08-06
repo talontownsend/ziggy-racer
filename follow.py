@@ -840,7 +840,7 @@ def main() -> int:
                    "ff", "p_t", "i_t", "d_t", "cte_int", "cte_dot", "kappa_ff",
                    "lap_no", "lap_t", "sideslip", "plan_d0", "plan_L", "plan_deg",
                    "psi_deg", "km_max", "kap_car", "vcurve_kmh", "thr_cap", "yawrate",
-                   "susp_f", "susp_r", "susp_roll", "w_rear", "bind_code", "bind_free", "pad_thr", "pad_brk", "meas_latg", "meas_long", "drive_slip", "brake_lock", "drive_spin", "alat_max_g", "fc_frac",
+                   "susp_f", "susp_r", "susp_roll", "w_rear", "cs_front", "cs_rear", "sa_front", "bind_code", "bind_free", "pad_thr", "pad_brk", "meas_latg", "meas_long", "drive_slip", "brake_lock", "drive_spin", "alat_max_g", "fc_frac",
                    "r_des", "r_meas", "e_r", "over", "under", "race_pos",
                    "y", "pitch_deg", "roll_deg",
                    "vt2_mult", "vt2_inside",
@@ -2471,6 +2471,9 @@ def main() -> int:
                            round((f.susp_rl + f.susp_rr) * 0.5, 4),
                            round((f.susp_fl + f.susp_rl) * 0.5 - (f.susp_fr + f.susp_rr) * 0.5, 4),
                            round((f.wheel_rl + f.wheel_rr) * 0.5, 3),
+                           round(max(abs(f.combined_slip_fl), abs(f.combined_slip_fr)), 3),
+                           round(max(abs(f.combined_slip_rl), abs(f.combined_slip_rr)), 3),
+                           round(max(abs(f.slip_angle_fl), abs(f.slip_angle_fr)), 4),  # DEGREES already
                            bind_code, round(bind_free * 3.6, 1), round(pad_thr, 4), round(pad_brk, 4), round(f.ax / 9.81, 2), round(f.az / 9.81, 3), round(drive_slip, 2),
                            round(brake_lock, 2), round(drive_spin, 3),
                            round(alat_max_now / 9.81, 2), round(fc_frac, 2),
