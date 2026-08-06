@@ -56,10 +56,10 @@ across seven arms.
 
 ## Gates that now exist
 
-- `tools/vtrim_health.py` — stranded learned state (the 3.3 s defect's signature)
-- `tools/loop_health.py` — control-loop tail latency
-- `tools/joint_search.py` — multi-axis A/B with mechanism metrics, auto-revert, learner restore
-- `tools/vtrim_refit_net.py` — refit the net to the CURRENT map, never the stored 07-03 labels
+- `tools/vtrim_health.py`, stranded learned state (the 3.3 s defect's signature)
+- `tools/loop_health.py`, control-loop tail latency
+- `tools/joint_search.py`, multi-axis A/B with mechanism metrics, auto-revert, learner restore
+- `tools/vtrim_refit_net.py`, refit the net to the CURRENT map, never the stored 07-03 labels
 
 ## What remains
 
