@@ -114,26 +114,42 @@ Delivered is exactly `commanded - 1.0`. This destroys **23.9% of all on-track pe
 
 ### Why fixing it keeps losing
 
-The wrap is **not** uniformly distributed. The understeer flag is set on **48.6%** of over-range
-ticks against 31.5% overall. So the overflow acts as a throttle cut that fires preferentially
-when the car is understeering, which is exactly when a throttle cut is correct. Delivering the
-commanded value instead (`pad_clamp`) measured worse six times, and pairing it with a stability
-compensation (`slip_target` 1.05 -> 0.85) did not rescue it.
+**First attempt at an answer, RETRACTED.** The understeer flag is set on 48.6% of over-range
+ticks against 18.5% of in-range ticks, and I read that as the overflow acting as a throttle cut
+that fires when the car is understeering, i.e. a well-targeted accident. **Condition-matching
+destroys it.** Over-range commands require high `grip_scale`, meaning high load, meaning
+corners; understeer lives in corners too. Matched on |steer| x lateral-g x speed over 36 cells
+(41,277 over-range vs 138,870 in-range ticks):
 
-`gs_max=1.0` is **not** an independent fix: capping `grip_scale` for `thr_cap` makes the demand
-<= 1.0, and on exactly those ticks the controller wanted "as much as possible", so it delivers
-1.0 just as `pad_clamp` does. The two are equivalent where it matters.
+| | understeer rate |
+|---|---|
+| over-range | 50.4% |
+| matched in-range | 47.9% |
+| difference | **+2.6 points**, and only 19/36 cells favour over-range |
+
+That is a coin flip. The aggregate 30-point gap was pure confound (METHODOLOGY rule 5, which I
+should have applied before writing the claim down).
+
+**What survives.** The wrap concentrates in high-load cornering, and delivering the commanded
+value there (`pad_clamp`) measured worse six times, with a stability compensation attempted and
+failing too. So the demand is wrong *for high-load corners*. It is NOT selectively cutting
+during understeer, and the overflow is not a smart accidental controller, just a cut that lands
+where load is high.
+
+`gs_max=1.0` is still not an independent fix: capping `grip_scale` for `thr_cap` makes the
+demand <= 1.0, and on those ticks the controller wanted "as much as possible", so it delivers
+1.0 exactly as `pad_clamp` does.
 
 ### What that actually means
 
-The controller asks for full throttle while the car is understeering, on ~9% of the lap, and the
-only reason the car stays on the road is an integer overflow. **The defect is the demand law,
-not the pad.** Clamping cannot help, because clamping faithfully delivers a wrong demand.
+The controller asks for more than full throttle in high-load corners on ~9% of the lap, and an
+integer overflow is the only reason the car survives it. **Clamping cannot help, because
+clamping faithfully delivers a demand that is wrong there.** The fix is a demand law that does
+not ask for full throttle in that regime, which is a throttle-side redesign distinct from every
+`pad_clamp` arm, all of which changed delivery and left the demand alone.
 
-The fix is for the demand law not to ask for full throttle under understeer in the first place.
-`understeer_gain` and the `under` flag already exist and are evidently not doing enough. That is
-a throttle-side redesign, distinct from every `pad_clamp` arm tried so far, all of which changed
-delivery while leaving the demand untouched.
+What specifically is wrong with the demand in high-load corners is **not established**. The
+understeer hypothesis was the obvious candidate and it did not survive. That question is open.
 
 **Do not "fix the wrap" without fixing the demand first.** The wrap is currently load-bearing,
 and removing a load-bearing accident before replacing its function is how this gets slower.
