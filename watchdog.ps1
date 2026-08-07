@@ -28,7 +28,9 @@ $lastRestart = (Get-Date).AddMinutes(-10)
 $lastLen = -1
 $lastGrow = Get-Date
 $count = 0
-WLog "watchdog started (no-growth>180s, cooldown 360s, max 30 restarts)"
+$escalate = 0
+$seqFail  = 0
+WLog "watchdog started (no-growth>180s, cooldown 360s, max 30 restarts; disconnect-modal escalation armed, fail-closed after 2 failed sequences)"
 while ($true) {
   Start-Sleep -Seconds 30
   $li = Get-Item $log
@@ -82,7 +84,20 @@ while ($true) {
   if ($age -gt 180 -and $cool -gt 360) {
     if ($count -ge 30) { WLog "STALE ${age}s but hit 30-restart cap -> giving up (needs human)"; break }
     $count++
-    WLog "STALE log ${age}s -> restart #$count"
+    # DISCONNECT-MODAL ESCALATION (08-06). When FH6 raises the controller-disconnected
+    # modal the follower blocks on telemetry and never reaches its own recovery, so
+    # replug_pad() inside follow.py is unreachable. And the pad the game believes is gone
+    # cannot prove it is back by pressing buttons -- only a NEW device arrival clears it.
+    # Measured 08-01: 80 minutes dead across 7 restarts, because each restart recreated
+    # the pad while the game still held the stale handle.
+    #   stage 0: plain restart.  stage 1: cycle the vpad for a fresh arrival, then restart.
+    #   two failed full sequences -> FAIL CLOSED (stop, restore, arm nothing, say why).
+    if ($escalate -ge 1) {
+      WLog "  escalation: cycling the virtual gamepad (fresh arrival event clears the modal)"
+      $cyc = & $py (Join-Path $root 'tools/cycle_vpad.py') 2>&1
+      WLog "  cycle_vpad: $cyc"
+    }
+    WLog "STALE log ${age}s -> restart #$count (stage $escalate, seq failures $seqFail)"
     Copy-Item "$root\follower_stdout.log" "$root\wd_fail_stdout_$((Get-Date).ToString('HHmmss')).log" -EA SilentlyContinue
     Copy-Item "$root\follower_stderr.log" "$root\wd_fail_stderr_$((Get-Date).ToString('HHmmss')).log" -EA SilentlyContinue
     # the relaunch TRUNCATES follow_log.csv -- archive it first (07-05: lost a 9 h soak)
@@ -103,6 +118,51 @@ while ($true) {
     $t | ConvertTo-Json | Set-Content $tune
     WLog "  tune keys re-added; resuming watch"
     $lastRestart = Get-Date
+
+    # Did the restart restore ROW FLOW? Growth, never mtime -- the follower touches the
+    # file during its own recovery loop while writing zero rows (07-29: 90 min silent death).
+    $g0 = (Get-Item $log -EA SilentlyContinue).Length
+    Start-Sleep -Seconds 45
+    $g1 = (Get-Item $log -EA SilentlyContinue).Length
+    if ($g1 -gt $g0 + 2000) {
+      WLog "  rows flowing again (+$($g1-$g0) bytes/45s) -- escalation reset"
+      $escalate = 0
+    } else {
+      WLog "  STILL no rows (+$($g1-$g0) bytes/45s)"
+      if ($escalate -ge 1) {
+        $seqFail++; $escalate = 0
+        WLog "  full sequence failed ($seqFail of 2)"
+        if ($seqFail -ge 2) {
+          WLog "FAIL CLOSED: restart + gamepad cycle failed twice. Stopping the farm."
+          Get-CimInstance Win32_Process -Filter "name='python.exe'" |
+            Where-Object { $_.CommandLine -like '*follow.py*' } |
+            ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+          $rec = & $py (Join-Path $root 'tools/run_queue.py') --recover 2>&1
+          WLog "  restore obligations honoured: $rec"
+          $why = Join-Path $root 'recordings/FARM_STOPPED.txt'
+          @(
+            "FARM STOPPED $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+            "",
+            "Reason: telemetry rows stopped and did not resume after TWO full recovery",
+            "sequences (plain follower restart, then virtual-gamepad cycle + restart).",
+            "That is the controller-disconnect modal signature, or a game state the",
+            "watchdog cannot clear.",
+            "",
+            "Actions taken: follower stopped; run_queue.py --recover executed, so every",
+            "restore obligation is applied and NO tune key is left armed. Watchdog exited.",
+            "",
+            "Needs a human: clear the dialog / restart the EventLab race, then",
+            "  python tools/run_queue.py --recover    (verify 0 outstanding obligations)",
+            "  Start-Process pwsh -ArgumentList '-NoProfile','-File',(Join-Path $root 'watchdog.ps1') -WindowStyle Hidden"
+          ) | Set-Content $why
+          WLog "  wrote $why -- exiting"
+          break
+        }
+      } else {
+        $escalate = 1
+        WLog "  escalating: next attempt cycles the virtual gamepad first"
+      }
+    }
   }
 }
 

@@ -127,12 +127,24 @@ def run_next(q):
         print(f"[run] {step['id']} blocked on {dep}"); return 2
 
     print(f"[run] {step['id']}")
+    # preflight scripts may carry args (e.g. "tools/cycle_vpad.py --check")
     for script in step.get("preflight", []):
         # bare script paths, run with THIS interpreter -- "python" on PATH is the Store stub
         # on the laptop and would silently not be the venv.
         print(f"  preflight: {script}")
-        if subprocess.run([sys.executable, script], cwd=ROOT).returncode != 0:
+        if subprocess.run([sys.executable] + script.split(), cwd=ROOT).returncode != 0:
             print("  PREFLIGHT FAILED -- not arming"); return 3
+    if step.get("preflight_live_smoke"):
+        # ONE real gamepad cycle, here only. The watcher has already confirmed the machine is
+        # free; this proves the watchdog's escalation action actually works on this box before
+        # any unattended window depends on it. Never runs while a human is at the keyboard.
+        print("  preflight LIVE SMOKE: real virtual-gamepad cycle")
+        rc = subprocess.run([sys.executable, "tools/cycle_vpad.py"], cwd=ROOT).returncode
+        if rc != 0:
+            print(f"  GAMEPAD CYCLE FAILED (rc={rc}) -- not arming. The watchdog's disconnect-modal "
+                  f"escalation would not work, so an unattended window is unsafe.")
+            return 5
+        print("  gamepad cycle OK -- the escalation action is proven on this machine")
 
     snaps = snapshot(step["snapshot_tag"])
     print(f"  learner snapshot -> {snaps}")
