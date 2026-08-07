@@ -639,7 +639,7 @@ def main() -> int:
                    "slip_brake": slip_brake_gain,
                    "cte_soft": cte_soft, "cte_hard": cte_hard,
                    "planner_alat": args.planner_alat, "planner_alat_k": args.planner_alat_k,
-                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "ff_thr": 0.0, "a_full": 14.6, "ff_itrim": 0.25, "gs_max": 0.0, "cte_ileak": 0.0, "aw_on": 0.0, "k_reserve": 1.0, "ksp_on": 0.0, "k_counter": args.k_counter, "r_thr": args.r_thr,
+                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "ff_thr": 0.0, "a_full": 14.6, "ff_itrim": 0.25, "gs_max": 0.0, "cte_ileak": 0.0, "aw_on": 0.0, "k_reserve": 1.0, "ksp_on": 0.0, "gov_floor": 0.0, "k_counter": args.k_counter, "r_thr": args.r_thr,
                    "understeer_gain": args.understeer_gain, "understeer_thr": args.understeer_thr},
                   open(args.tune_file, "w"), indent=2)
     except Exception:
@@ -989,6 +989,8 @@ def main() -> int:
         return float(np.interp(np.log(min(ak, kcv[-1])), np.log(kcv), row))
     # --- chain-fix A/B candidates (2026-07-05), all default OFF; hot-reloadable ---
     tune_hash = "boot"  # md5[:8] of the live tune.json; segments a log by config
+    gov_floor = 0.0    # cross-track governor floor as a fraction of the ungoverned
+                       # target, scaled by g. 0.0 = OFF (shipped behaviour exactly).
     ksp_on = 0.0       # 1.0 = v_curve reads the line-smoothed SPEED kappa (kappa_speed).
                        # Steering FF is untouched either way (kappa_ref stays its source).
     k_reserve = 1.0    # clip cross-track correction to (1-|ff|)*k_reserve. 0 = OFF.
@@ -1282,6 +1284,7 @@ def main() -> int:
                     aw_on = float(_t.get("aw_on", aw_on))
                     cte_ileak = float(_t.get("cte_ileak", cte_ileak))
                     k_reserve = float(_t.get("k_reserve", k_reserve))
+                    gov_floor = float(_t.get("gov_floor", gov_floor))
                     ksp_on = float(_t.get("ksp_on", ksp_on))
                     if planner is not None:
                         planner.ksp = max(0.0, min(1.0, ksp_on))   # BLEND 0..1
@@ -1833,7 +1836,29 @@ def main() -> int:
                 g = max(0.0, 1.0 - (acte - cte_soft) / max(cte_hard - cte_soft, 1e-3))
                 # crawl floor (4 m/s) so an off-corridor car at standstill can drive itself
                 # back onto the line instead of deadlocking at target~=0 (same trap as plan_degraded)
-                _c = max(spd * (0.5 + 0.5 * g) + 1.0, 4.0)
+                # RECOVERY ALLOWANCE (gov_floor, default 0.0 = OFF, bit-identical to shipped).
+                #
+                # The shipped floor hands a governed car `spd + 1.0 m/s`: a standing +3.6 km/h
+                # allowance regardless of how far under the real target it is. The car does climb
+                # out (measured 121.7 -> 130.1 km/h over 14 stations) but at a rate set by
+                # kp_thr * 1.0 instead of kp_thr * (real deficit ~30 m/s). The RATE is the defect,
+                # not an inability to accelerate.
+                #
+                # Measured 08-06: one excursion spanning stations 750-799 owns 70% of all governed
+                # ticks, in 138/359 laps, denying 26-35 km/h. It is born ~station 744 where the car
+                # trail-brakes at FULL LOCK and washes wide; the governor is the symptom.
+                #
+                # A fraction-of-ungoverned-target floor was evaluated first and does nothing here:
+                # at |cte| 5.68 (g=0.966) the shipped floor is already ~spd+1 and the car sits at
+                # 79% of target, so the fraction never binds below gov_floor~0.82.
+                #
+                # So: widen the ALLOWANCE, scaled by g**3. The guard must not weaken -- raising
+                # cte_soft was tested twice and sent off-track 0.05% -> 2.24%. g is 1 just past
+                # cte_soft and 0 at cte_hard; cubing concentrates the allowance in the mild band
+                # (96% of governed ticks) and collapses it far off-line, where the shipped
+                # speed-tied floor governs as today. Never exceeds the ungoverned target.
+                _c = max(spd * (0.5 + 0.5 * g) + 1.0 + gov_floor * (g ** 3), 4.0)
+                _c = min(_c, target_v)
                 if _c < target_v: bind_code = 6
                 target_v = min(target_v, _c)
             # UNDERSTEER (point #2): front washing wide (turning less than the path commands) ->
