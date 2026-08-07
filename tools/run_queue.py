@@ -252,12 +252,22 @@ def run_next(q):
     step["result"] = json.loads(m.group(1)) if m else {"exit": p.returncode, "note": "no RESULT_JSON"}
     step["status"] = "done"
     save(q)
-    _ab = re.search(r"(ABORT:[^\n]*)", p.stdout or "")
-    if _ab:
-        report("ABORT", step["id"] + ": " + _ab.group(1))
-    else:
+    # Key the verdict off ab_arm EXIT CODE, not off whether stdout happened to contain the
+    # word ABORT. Caught by the 08-06 rehearsal: a window that exited 2 with no RESULT_JSON
+    # was reported as SCORED, which in the morning reads as a clean result when it was not.
+    #   0 = scored | 2 = aborted | 3 = voided (follower restarted) | else = failed
+    _ab = re.search("(ABORT:[^" + chr(10) + "]*)", p.stdout or "")
+    if p.returncode == 0 and m:
         report("SCORED", step["id"], **{k: v for k, v in step["result"].items()
                                         if k in ("n_laps", "med", "best", "stalls")})
+    elif p.returncode == 2 or _ab:
+        report("ABORT", step["id"] + ": "
+               + (_ab.group(1) if _ab else "exit 2, reason not captured"))
+    elif p.returncode == 3:
+        report("VOIDED", step["id"] + ": follower restarted mid-window, result discarded")
+    else:
+        report("FAILED", step["id"] + ": ab_arm exit " + str(p.returncode)
+               + ", no RESULT_JSON")
     report("POLICY", step["id"] + " on_success: "
            + str(step.get("on_success", "(unset)"))[:110])
 
