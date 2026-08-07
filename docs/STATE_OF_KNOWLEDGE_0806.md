@@ -59,6 +59,53 @@ samples and single-handedly produced a bogus 1.11 s for the 700-745 section, whi
 
 ---
 
+## 2b. The survey is NOT complete -- full section allocation
+
+Non-overlapping partition aligned to the REAL structure boundaries (span A = stations 442-567,
+span B = 596-656), launch and stall laps excluded on both sides. Sums to +3.37 s.
+
+| section | stations | m | bot s | hum s | lost | coverage |
+|---|---|---|---|---|---|---|
+| start / T1 | 0-120 | 128 | 3.25 | 2.81 | +0.44 | **CLOSED** `T1_SECTION_0806` |
+| S2 | 120-260 | 151 | 4.46 | 4.31 | +0.15 | **untouched** |
+| fast 260-340 | 260-340 | 85 | 1.78 | 1.52 | **+0.26** | **untouched** |
+| S4 -> span A entry | 340-442 | 107 | 4.51 | 4.47 | +0.04 | untouched |
+| MBC SPAN A | 442-568 | 138 | 4.26 | 3.70 | +0.56 | **CLOSED** `MBC_SPAN_B_0806` |
+| between the spans | 568-596 | 30 | 0.95 | 0.80 | +0.15 | **untouched** |
+| MBC SPAN B | 596-657 | 64 | 2.12 | 1.70 | +0.43 | ARM `mbc_rzc_115` |
+| span B exit -> excursion | 657-745 | 95 | 2.10 | 1.84 | **+0.26** | **untouched** |
+| EXCURSION | 745-800 | 61 | 1.82 | 1.44 | +0.38 | ARM `abrake_k_075` / `ileak_rep2` |
+| corner 1 (inherits) | 800-850 | 54 | 1.42 | 1.20 | +0.21 | inherits -> `abrake_k_075` |
+| corner 3 (inherits) | 850-930 | 85 | 1.86 | 1.59 | +0.27 | inherits -> `abrake_k_075` |
+| main straight | 930-1000 | 74 | 1.30 | 1.09 | +0.21 | **untouched** |
+| **TOTAL** | | 1071 | **29.84** | **26.47** | **+3.37** | |
+
+**Allocation: closed 1.00 s (30%), queued arms 0.81 s (24%), inherits 0.48 s (14%),
+UNTOUCHED 1.08 s (32%).**
+
+**The budget is NOT fully allocated. State this plainly rather than implying completeness.**
+
+### Untouched sections at or above 0.15 s, by loss density
+
+| section | lost | m | s per 100 m | stations |
+|---|---|---|---|---|
+| **between the spans** | +0.15 | 30 | **0.500** | 568-596 |
+| main straight | +0.21 | 74 | 0.284 | 930-1000 |
+| fast 260-340 | +0.26 | 85 | 0.306 | 260-340 |
+| span B exit -> excursion | +0.26 | 95 | 0.274 | 657-745 |
+| S2 | +0.15 | 151 | 0.099 | 120-260 |
+
+For scale, the two armed sections run 0.62-0.67 s per 100 m, so nothing untouched is as dense as
+what is already targeted.
+
+**Next depth treatment: `between the spans` (stations 568-596)** -- highest loss density of
+anything untouched, only 30 m, and it sits directly between two clamped spans, which makes it
+the most likely place for a boundary or hand-off artifact. `fast 260-340` and `main straight`
+follow; both are high-speed sections where the cause is more likely gearing or power than a
+control decision, and neither has been examined at all.
+
+---
+
 ## 3. The causal model
 
 ### 3a. The excursion (measured, high confidence)
