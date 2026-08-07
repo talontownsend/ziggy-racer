@@ -60,9 +60,15 @@ def set_deadman(keys):
     the dead-man and the live config desync at the end of every window (the pad_clamp failure)."""
     with open(WD, encoding="utf-8", errors="ignore") as f:
         s = f.read()
+    missing = [k for k in keys if not re.search(rf"{re.escape(k)}=[0-9.]+", s)]
+    if missing:
+        # A key absent from $addKeys means the pin would be a SILENT NO-OP: the arm would not
+        # survive a follower restart, and the window would be quietly voided rather than run.
+        # Refuse loudly instead -- silent no-ops are the failure class that keeps recurring here.
+        raise RuntimeError(f"watchdog.ps1 $addKeys has no entry for {missing}; "
+                           f"add it (at its inert default) before arming.")
     for k, v in keys.items():
-        if re.search(rf"{re.escape(k)}=[0-9.]+", s):
-            s = re.sub(rf"{re.escape(k)}=[0-9.]+", f"{k}={v}", s, count=1)
+        s = re.sub(rf"{re.escape(k)}=[0-9.]+", f"{k}={v}", s, count=1)
     with open(WD, "w", encoding="utf-8", errors="ignore", newline="") as f:
         f.write(s)
 
