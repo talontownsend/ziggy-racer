@@ -86,6 +86,72 @@ def snapshot(tag):
     return out
 
 
+REPORT = os.path.join(REC, "RUN_REPORT.md")
+
+
+def report(kind, msg, **kw):
+    """Append one consequential event to the single run report.
+
+    The night must be readable back from ONE place, in order. watchdog.log,
+    auto_resume_log.jsonl and the queue fields are per-component traces; this is the
+    narrative: gate opened, armed, scored, aborted, escalated, deployed.
+    """
+    line = '- `' + time.strftime('%m-%d %H:%M:%S') + '`  **' + kind + '**  ' + str(msg)
+    if kw:
+        line += '  |  ' + '  '.join('`' + str(k) + '=' + str(v) + '`' for k, v in kw.items())
+    try:
+        new = not os.path.exists(REPORT)
+        with open(REPORT, "a", encoding="utf-8") as f:
+            if new:
+                f.write('# Run report' + chr(10) + chr(10) + 'Every consequential event, in'
+                        ' order. Written by run_queue.py and the watcher.' + chr(10) + chr(10))
+            f.write(line + chr(10))
+    except Exception:
+        pass
+    print('[report] ' + kind + ': ' + str(msg), flush=True)
+
+
+def wait_stable(max_wait_min=90.0, win_laps=15, tol=0.15, need=2, poll_s=120):
+    """Block until the post-restart transient has settled, judged by STABILITY not lap count.
+
+    A fixed lap count produced the fake 0.27 s on 08-06: the arm was baselined against the
+    first 45 min after a restart, during which lap times fell monotonically 30.60 -> 30.33 ->
+    30.25 -> 30.11 independent of config. The learner re-equilibrates after every restart and
+    the decay has no fixed length.
+
+    Criterion: the trailing 30-min median must sit within `tol` of the previous 30-min median,
+    `need` consecutive polls running.
+    """
+    import ab_arm
+    t0 = time.time()
+    ok = 0
+    print('[gate] waiting for the post-restart transient to settle', flush=True)
+    while (time.time() - t0) / 60.0 < max_wait_min:
+        time.sleep(poll_s)
+        tn = ab_arm.now_t()
+        if tn is None:
+            print('[gate] no telemetry clock yet', flush=True); continue
+        recent = ab_arm.scan(t_from=tn - 1800)
+        prev = ab_arm.scan(t_from=tn - 3600, t_to=tn - 1800)
+        if not (recent and prev and recent["med"] and prev["med"]
+                and recent["n_laps"] >= win_laps and prev["n_laps"] >= win_laps):
+            print('[gate] not enough laps in both windows yet', flush=True); continue
+        d = abs(recent["med"] - prev["med"])
+        ok = ok + 1 if d < tol else 0
+        print('[gate] prev %.2f (%d) vs recent %.2f (%d)  |d| %.2f  stable %d/%d'
+              % (prev["med"], prev["n_laps"], recent["med"], recent["n_laps"], d, ok, need),
+              flush=True)
+        if ok >= need:
+            el = (time.time() - t0) / 60.0
+            return dict(opened_after_min=round(el, 1), baseline_med=round(recent["med"], 3),
+                        baseline_laps=recent["n_laps"],
+                        offtrack_pct=round(recent.get("offtrack_pct") or -1, 3),
+                        map_wmin=round(ab_arm.map_wmin() or -1, 4),
+                        at=time.strftime("%Y-%m-%d %H:%M:%S"))
+    print('[gate] TIMED OUT without settling', flush=True)
+    return None
+
+
 def honour(q):
     """Apply every outstanding restore obligation, then clear them. Idempotent."""
     obs = q.get("restore_obligations", [])
@@ -99,6 +165,7 @@ def honour(q):
             set_deadman(o["deadman"]); print(f"  dead-man   <- {o['deadman']}")
     q["restore_obligations"] = []
     save(q)
+    report("RECOVER", "honoured " + str(len(obs)) + " restore obligation(s)")
     print("[recover] obligations cleared")
     return len(obs)
 
@@ -146,6 +213,14 @@ def run_next(q):
             return 5
         print("  gamepad cycle OK -- the escalation action is proven on this machine")
 
+    if step.get("require_stable_baseline") and not step.get("baseline_gate"):
+        g = wait_stable()
+        if g is None:
+            print("  BASELINE NEVER SETTLED -- not arming"); return 4
+        step["baseline_gate"] = g
+        save(q)
+        report("BASELINE GATE", "opened for " + step["id"], **g)
+
     snaps = snapshot(step["snapshot_tag"])
     print(f"  learner snapshot -> {snaps}")
 
@@ -156,13 +231,20 @@ def run_next(q):
     step["started_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
     save(q)
     set_deadman(step["deadman_pin"])
+    report("ARM", step["id"] + " armed " + json.dumps(step["arm"]),
+           deadman=json.dumps(step["deadman_pin"]), snapshot=step["snapshot_tag"])
     print(f"  dead-man pinned {step['deadman_pin']}; obligation recorded")
 
+    extra = ""
+    if step.get("abort_offtrack") is not None:
+        extra += " --abort-offtrack " + str(step["abort_offtrack"])
+    if step.get("abort_mapwmin") is not None:
+        extra += " --abort-mapwmin " + str(step["abort_mapwmin"])
     cmd = (f'"{sys.executable}" tools/ab_arm.py --label {step["id"]} '
            f"--arm '{json.dumps(step['arm'])}' --revert '{json.dumps(step['revert'])}' "
            f"--equil {step['equil_min']} --score {step['score_min']} "
            f"--abort-stalls {step['abort_stalls']} --abort-med {step['abort_med']} "
-           f"--abort-lapmin {step['abort_lapmin']}")
+           f"--abort-lapmin {step['abort_lapmin']}" + extra)
     print(f"  {cmd}")
     p = subprocess.run(cmd, shell=True, cwd=ROOT, capture_output=True, text=True)
     print(p.stdout[-2000:] if p.stdout else "")
@@ -170,6 +252,14 @@ def run_next(q):
     step["result"] = json.loads(m.group(1)) if m else {"exit": p.returncode, "note": "no RESULT_JSON"}
     step["status"] = "done"
     save(q)
+    _ab = re.search(r"(ABORT:[^\n]*)", p.stdout or "")
+    if _ab:
+        report("ABORT", step["id"] + ": " + _ab.group(1))
+    else:
+        report("SCORED", step["id"], **{k: v for k, v in step["result"].items()
+                                        if k in ("n_laps", "med", "best", "stalls")})
+    report("POLICY", step["id"] + " on_success: "
+           + str(step.get("on_success", "(unset)"))[:110])
 
     honour(q)                      # restores tune + dead-man unconditionally
     print(f"  washout {step['washout_min']} min at baseline, then score the A-B-A")
