@@ -1,5 +1,7 @@
 # A_BRAKE is optimistic, and it explains the excursion
 
+> **SEE docs/STATE_OF_KNOWLEDGE_0806.md section 3a.** The A_BRAKE finding stands. Note the excursion approach section costs 0.12 s, not the 1.11 s an earlier per-station-median estimate produced (item 10).
+
 `follow.py` back-propagates the braking target at a fixed `A_BRAKE = 25.0 m/s^2 (2.55 g)`,
 independent of steering. Measured against achieved longitudinal deceleration on 159,903 ticks
 with brake > 0.30:

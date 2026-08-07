@@ -1,5 +1,7 @@
 # Reconciling the v_curve numbers, and why the corner-speed cap is approximately right
 
+> **SUPERSEDED (see docs/STATE_OF_KNOWLEDGE_0806.md, items 3-4).** 'The cap is within 3-7 km/h of the human' is a corner-median artifact: per station it denies 13-18 km/h mean and 33-45 at the peak. The do-not-touch flag on the estimator still stands, but for a different reason than stated here.
+
 Two of my figures differed 5x and both were wrong. This states what each measured, gives the
 correct decomposition, and reaches the opposite conclusion to the one they pointed at.
 

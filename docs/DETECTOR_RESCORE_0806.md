@@ -1,5 +1,7 @@
 # Rescoring the archived arms after the lap-detector fix
 
+> **SEE docs/STATE_OF_KNOWLEDGE_0806.md item 1** for the full detector story and the corrected baseline scale.
+
 `ab_arm.py` keyed laps by `(session, lap_no)`. `lap_no` repeats within a follower session
 because the event restarts and numbering begins again, so it merged ~4 real laps per group
 and reported `max(lap_t)`: **+0.71 s median, +0.48 s best**, 211 laps counted as 50.

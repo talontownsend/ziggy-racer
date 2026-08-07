@@ -1,5 +1,7 @@
 # The brake side is closed, and it closes by construction
 
+> **SUPERSEDED IN PART (see docs/STATE_OF_KNOWLEDGE_0806.md, item 2).** The closure is TRUE but TAUTOLOGICAL. The brake branch fires whenever `err < 0` (car over target) with NO magnitude bound; the `err <= 1.0` ceiling applies only to the anticipatory `err >= 0` case. Testing ticks with `tgt - v > 10 km/h` and finding 0.00% braking is guaranteed by the predicate, since `err > 1.0` forces the throttle branch. At the excursion (stations 795-845) 18.9% of ticks brake and 34.5% of those run to -68.2 km/h of error. **Read this document as scoped to under-target ticks only.** Also: every median below is inflated ~0.71 s (item 1).
+
 Eighteen would have been the arm count. There is no eighteenth worth a window.
 
 ## The brake cannot reach the deficit

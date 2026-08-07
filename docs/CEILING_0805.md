@@ -1,5 +1,7 @@
 # Twenty-four arms: the mechanism metrics are all improvable, the lap time is not
 
+> **MEDIANS INFLATED ~0.71 s (see docs/STATE_OF_KNOWLEDGE_0806.md, item 1).** The lap detector merged ~4 laps per group until 08-06. Conclusions resting on a scored median need re-reading.
+
 ## The integrator leak: the defect was real, the fix worked, the clock did not move
 
 The cross-track integrator has a clamp and no leak. Measured over 398k ticks: at/near its 3.0

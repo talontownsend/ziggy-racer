@@ -1,5 +1,7 @@
 # Where the speed deficit actually comes from
 
+> **READ WITH docs/STATE_OF_KNOWLEDGE_0806.md section 2.** The decomposition is correct but the deficit metric is weak: 99.2% of non-braking ticks are 'under target' because a car accelerating out of a corner is under its straight-line target by definition. The per-lap SECTION TIME budget in the state-of-knowledge doc is the load-bearing version.
+
 First clean `bind_code` decomposition. `bind_code` is **logged, not reconstructed**: it names
 the last term that lowered `target_v`, so it is the binding constraint. Every prior
 reconstruction of this chain needed correcting, which is why it is logged.

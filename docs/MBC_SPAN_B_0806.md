@@ -1,5 +1,7 @@
 # MBC span B guards a crest that starts 8 m after the span does
 
+> **SEE ALSO docs/STATE_OF_KNOWLEDGE_0806.md section 2.** MBC span A costs 0.75 s (23% of the gap) and span B 0.45 s -- 1.20 s combined, 36% of the total. Span A is the largest single section on the lap and currently has NO queued arm.
+
 Span B caps the learned map's boost at 1.0 across s=638-702. It is the largest per-station
 denial found 08-06: at corner 2's binding zone the effective target is 88.1 km/h, and even a
 full `ksp` blend only reaches 107.5 because the clamp is binding, not the curvature.

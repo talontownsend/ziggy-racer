@@ -1,3 +1,5 @@
+> **PARTLY SUPERSEDED (see docs/STATE_OF_KNOWLEDGE_0806.md, items 7-9).** The k_reserve 0.20 s and the stage-4 0.27 s are BOTH non-attributable: the first was erased by its washout (29.94 vs 29.92), the second was baselined against a post-restart transient. And 'the derate is not binding at full lock' was brake-contaminated -- it binds on 45.4% of full-lock ticks. The mechanism findings stand; the lap-time claims do not.
+
 
 ---
 

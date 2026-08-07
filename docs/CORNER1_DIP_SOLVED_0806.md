@@ -1,5 +1,7 @@
 # The corner-1 dip is the cross-track governor, and it explains the ileak result
 
+> **PARTLY SUPERSEDED (see docs/STATE_OF_KNOWLEDGE_0806.md, item 5 and section 3b).** The governor identification is correct and exact. But the cascade costs only ~0.38 s (11% of the gap), not the dominant share implied by its 70% tick count -- time, not tick share, is the currency.
+
 The largest single loss chain of 08-06. Traced to the decimal; two of my own attributions were
 wrong first. Run: `python tools/tv_trace.py`. Logs and code only, farm down.
 

@@ -1,5 +1,7 @@
 # Closed questions
 
+> **PARTLY SUPERSEDED (see docs/STATE_OF_KNOWLEDGE_0806.md).** The brake closure is tautological (item 2), the corner-cap claim was a median artifact (item 3), and every median predates the lap-detector fix (item 1). The structural closures (path inert, AWD derate) stand.
+
 Every hypothesis tested to a conclusion, so none of them is re-derived. Each row is backed by a
 scored window or a structural argument, not an opinion. **Read this before proposing any change.**
 
