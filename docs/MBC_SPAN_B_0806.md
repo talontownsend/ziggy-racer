@@ -86,3 +86,70 @@ per-station denial on the lap. It does not interact with `abrake_k` (braking mod
 Worth stating plainly: this is a fix to a boundary that was set by **round numbers**.
 `mbc_a_lo/hi` = 470/608 and `mbc_b_lo/hi` = 638/702 are all suspiciously round. **The other three
 boundaries deserve the same `d2z/ds2` check** before anyone trusts them.
+
+---
+
+# BLOCKED: the stored map there is an artifact, and the fix is not local
+
+## Provenance of `map_w` at the 8 released stations
+
+**1.5500 at all eight -- exactly the ceiling.** MBC has clamped these to 1.0 in use since 07-08,
+so no value above 1.0 has ever been applied. History across every snapshot pair:
+
+| when | map@596-603 |
+|---|---|
+| 07-03 (pre-MBC) | **0.8000** — the FLOOR |
+| 07-07 (pre-MBC) | 1.5500 |
+| 07-13 | 1.1900 |
+| 08-01 | 0.8000 |
+| **08-02 onward** | **1.5500**, pinned across ~20 consecutive snapshots over 4 days |
+
+Boosting above 1.0 is free while the clamp is on -- the learner gets no feedback for it -- so the
+value drifted to the ceiling and welded there. **It is the same ceiling-drift artifact identified
+on the straights, not an earned number.** The one time these stations were plausibly exercised
+(07-03, before MBC) they learned the FLOOR.
+
+So releasing the boundary alone applies an **untested +48.4 km/h in a single step**.
+
+## And the obvious fix does not work
+
+Reset `map_w` to 1.0 at exactly the released stations, so day one is neutral and the learner
+earns the boost live. Measured:
+
+| | at stn 596-603 | upstream stn 579-595 |
+|---|---|---|
+| release alone | **+48.4** (untested) | 0 |
+| release + reset to 1.0 | **+0.0** | **−47 to −62** (worst −62.3 at stn 584) |
+
+**`map_w` is a window-MIN over the next 18 stations.** Writing 1.0 at 596-603 pulls down the
+window-min for 17 stations upstream that sit OUTSIDE the MBC span and currently read 1.55 through
+their lookahead. The reset is not local, and it cannot be made local by choosing a different
+value: avoiding the upstream loss requires keeping 1.55 stored, which is precisely the untested
+number. **The two goals are in direct conflict.**
+
+This is the same window-min coupling that defeated the `ksp` map migration. Any edit to the
+learned map propagates 18 stations backwards.
+
+**Status: BLOCKED**, pending a mechanism that can release a clamp without either an untested step
+or an upstream regression. The geometric finding above stands.
+
+---
+
+# Geometric audit: all four MBC boundaries are wrong, in both directions
+
+The spans exist to clamp convex (crest) geometry. Where `d2z/ds2` actually crosses zero:
+
+| boundary | value | at the boundary | error |
+|---|---|---|---|
+| `mbc_a_lo` | 470 m | **convex** (−0.00003) | **MISSES 30 m of crest** before the clamp starts |
+| `mbc_a_hi` | 608 m | concave (+0.00376) | clamps **12 m** of concave track past the hazard |
+| `mbc_b_lo` | 638 m | concave (+0.00218) | clamps **8 m** of concave track |
+| `mbc_b_hi` | 702 m | concave (+0.00295) | clamps **6 m** of concave track past the hazard |
+
+**Not one of the four sits on the geometry it exists to guard.** Three clamp non-crest track
+(6-12 m each); one starts 30 m *late* and misses real crest -- so span A is simultaneously too
+short at its entry and too long at its exit.
+
+Findings only. Every one inherits the same artifact-and-coupling problem documented above, so
+none is actionable until that is solved. Worth noting the direction: `mbc_a_lo` missing 30 m of
+crest is a **safety** gap, not a speed one, and is the more interesting of the four.
