@@ -350,6 +350,27 @@ def main() -> int:
                 _m = _vraw[_j]
             _d += seg[_j]; _j = (_j + 1) % n
         v_own[_i] = _m
+    # CURVATURE-AWARE BRAKING BUDGET (abrake_of). The braking pass back-propagates at a FLAT
+    # A_BRAKE = 25.0 m/s^2 regardless of steering. Measured 08-06 over 159,903 bot braking ticks
+    # and 15,301 human ones, the assumption is optimistic in every band and worst where it
+    # matters -- 45% of braking ticks happen at full lock.
+    #
+    #   band              bot achieved   human achieved
+    #   straight <0.15        22.0            21.4
+    #   partial               19.9            20.0
+    #   heavy                 13.5            19.5
+    #   full lock >0.9        14.1            16.1
+    #
+    # Calibrated to the HUMAN, not the bot: at full lock the bot's fronts are past peak slip on
+    # 90% of ticks (cs_front p50 2.42, brake_lock 2.32, slip angle only 1.04 deg, so it is
+    # longitudinal lock, not cornering). Calibrating on 14.1 would bake in the very defect this
+    # change exists to remove. The human demonstrates 16.1 under the same conditions.
+    #
+    # Indexed by the LATERAL DEMAND each station imposes (friction budget): a corner needing all
+    # the grip laterally leaves least for braking. frac = v^2*kappa / planner_alat.
+    _alat_req = (vplan ** 2) * np.abs(_kl)
+    _frac = np.clip(_alat_req / max(args.planner_alat, 1e-6), 0.0, 1.0)
+    abrake_of = np.interp(_frac, [0.0, 0.35, 0.70, 1.0], [21.4, 20.0, 19.5, 16.1])
     vplan_eff = vplan.copy()              # vown_w=0 -> exactly the old behaviour
     try:
         with open(os.path.join(os.path.dirname(args.plan), 'vehicle_spec.json')) as _vf:
@@ -639,7 +660,7 @@ def main() -> int:
                    "slip_brake": slip_brake_gain,
                    "cte_soft": cte_soft, "cte_hard": cte_hard,
                    "planner_alat": args.planner_alat, "planner_alat_k": args.planner_alat_k,
-                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "ff_thr": 0.0, "a_full": 14.6, "ff_itrim": 0.25, "gs_max": 0.0, "cte_ileak": 0.0, "aw_on": 0.0, "k_reserve": 1.0, "ksp_on": 0.0, "gov_floor": 0.0, "k_counter": args.k_counter, "r_thr": args.r_thr,
+                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "ff_thr": 0.0, "a_full": 14.6, "ff_itrim": 0.25, "gs_max": 0.0, "cte_ileak": 0.0, "aw_on": 0.0, "k_reserve": 1.0, "ksp_on": 0.0, "gov_floor": 0.0, "abrake_k": 0.0, "k_counter": args.k_counter, "r_thr": args.r_thr,
                    "understeer_gain": args.understeer_gain, "understeer_thr": args.understeer_thr},
                   open(args.tune_file, "w"), indent=2)
     except Exception:
@@ -989,6 +1010,8 @@ def main() -> int:
         return float(np.interp(np.log(min(ak, kcv[-1])), np.log(kcv), row))
     # --- chain-fix A/B candidates (2026-07-05), all default OFF; hot-reloadable ---
     tune_hash = "boot"  # md5[:8] of the live tune.json; segments a log by config
+    abrake_k = 0.0     # blend 0..1 into the curvature-aware braking budget.
+                       # 0.0 = flat A_BRAKE=25.0 everywhere (shipped, bit-identical).
     gov_floor = 0.0    # cross-track governor floor as a fraction of the ungoverned
                        # target, scaled by g. 0.0 = OFF (shipped behaviour exactly).
     ksp_on = 0.0       # 1.0 = v_curve reads the line-smoothed SPEED kappa (kappa_speed).
@@ -1284,6 +1307,7 @@ def main() -> int:
                     aw_on = float(_t.get("aw_on", aw_on))
                     cte_ileak = float(_t.get("cte_ileak", cte_ileak))
                     k_reserve = float(_t.get("k_reserve", k_reserve))
+                    abrake_k = float(_t.get("abrake_k", abrake_k))
                     gov_floor = float(_t.get("gov_floor", gov_floor))
                     ksp_on = float(_t.get("ksp_on", ksp_on))
                     if planner is not None:
@@ -1701,10 +1725,16 @@ def main() -> int:
             A_BRAKE = 25.0                                   # m/s^2 (~2.55g). Tried 28 (brake later) -> carried
                                                              # too much speed into corners the steering can't hold
                                                              # -> off-track. Braking IS control-gated (leads corners).
-            look = 20.0 + spd * spd / (2.0 * A_BRAKE)        # cover the braking distance, not a fixed 1.2*v
+            # abrake_k BLENDS in the curvature-aware budget (see abrake_of above).
+            # 0.0 = flat 25.0 everywhere, bit-identical to shipped. 1.0 = full human-calibrated
+            # table. The lookahead uses the LOWEST budget in play so the window can never be too
+            # short to see the binding corner (a short look is what brakes late).
+            _amin = A_BRAKE if abrake_k <= 0.0 else A_BRAKE + abrake_k * (float(abrake_of.min()) - A_BRAKE)
+            look = 20.0 + spd * spd / (2.0 * max(_amin, 1e-3))
             d2, j, tv = 0.0, i0, vplan_eff[i0]
             while d2 < look:
-                v_brake_ok = math.sqrt(vplan_eff[j] ** 2 + 2.0 * A_BRAKE * d2)
+                _ab = A_BRAKE if abrake_k <= 0.0 else A_BRAKE + abrake_k * (float(abrake_of[j]) - A_BRAKE)
+                v_brake_ok = math.sqrt(vplan_eff[j] ** 2 + 2.0 * _ab * d2)
                 tv = min(tv, v_brake_ok)
                 d2 += seg[j]
                 j = (j + 1) % n
