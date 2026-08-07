@@ -33,8 +33,8 @@ Run: `python tools/time_budget.py`.
 
 | section | m | bot s | human s | lost | % of gap | governor% |
 |---|---|---|---|---|---|---|
-| **MBC span A** (470-610) | 152 | 4.83 | 4.09 | **+0.75** | **23%** | 0.0% |
-| **corner 2 + MBC span B** (610-700) | 96 | 2.74 | 2.28 | **+0.45** | **14%** | 0.2% |
+| **stations 470-610** (s 501-652) | 152 | 4.83 | 4.09 | **+0.75** | **23%** | 0.0% |
+| **stations 610-700** (s 652-748) | 96 | 2.74 | 2.28 | **+0.45** | **14%** | 0.2% |
 | start / T1 (0-120) | 128 | 3.26 | 2.81 | +0.44 | 13% | 4.3% |
 | **excursion born + governed** (745-800) | 61 | 1.82 | 1.44 | **+0.38** | **11%** | 10.4% |
 | corner 3, inherits (850-930) | 85 | 1.86 | 1.59 | +0.27 | 8% | 1.5% |
@@ -46,9 +46,11 @@ Run: `python tools/time_budget.py`.
 | S4-S5 (340-470) | 137 | 5.38 | 5.29 | +0.09 | 3% | 0.5% |
 | **TOTAL** | 1071 | **29.85** | **26.53** | **+3.32** | | |
 
-**The two MBC spans together are 1.20 s -- 36% of the entire gap.** That is the largest single
-structural fact in the table, and span A alone (0.75 s) is bigger than the whole governor
-cascade.
+**CORRECTION (added after the span-A study).** The section labels above are STATION indices, and
+I originally mislabelled two of them as the MBC spans. They are not. MBC span A is s=470-608 m =
+**stations 442-567**, and the row labelled "470-610" is stations 470-610 = s 501-652 -- overlapping
+but different. Measured directly per lap, **the real span A costs +0.56 s**, not 0.75. The section
+rows remain correct as station ranges; only the MBC labels were wrong.
 
 Method note: this is per-lap section timing, NOT integrated median speed. The speed method is
 destroyed by sparse stations -- station 714 has a bot median of 3.9 km/h from a handful of stall
@@ -149,7 +151,7 @@ Each arm tests one component. **Score tomorrow against the stated signature, not
 
 | arm | model component | predicted mechanism signature | not expected |
 |---|---|---|---|
-| **`ileak_rep2`** (`cte_ileak` 0.5) | 3b, governor cascade | `|cte|` p90 falls (3.34 → ~3.06 m); governor tick share falls (3.44% → ~2.42%); `|cte|` >5.0 m ticks fall 3.4% → 2.4%; **at stations 786-800 governor engagement 67% → ~53%** | a large lap gain -- the governed section is only 0.38 s total, so **cycle 1's −0.51 s is larger than the mechanism can explain and is the main reason to doubt it** |
+| **`ileak_rep2`** (`cte_ileak` 0.5) | 3b, governor cascade | `|cte|` p90 falls (3.34 → ~3.06 m); governor tick share falls (3.44% → ~2.42%); `|cte|` >5.0 m ticks fall 3.4% → 2.4%; **at stations 786-800 governor engagement 67% → ~53%** | **0.38 s of any gain has a named mechanism (the governed section); the rest would need one.** Do not read a larger result as impossible: the measured effects are lap-wide, not confined to the governed stations -- `|cte|` p90 fell 0.28 m, code-3 deficit 14.8%, under-target deficit 1.6 km/h. Better tracking pays wherever the car is near its target. The A-B-A decides |
 | **`abrake_k_075`** | 3a, late braking | brake onset moves **s=780 → 769 m** (11 m earlier, human 761); entry speed into the corner DROPS while the minimum through it RISES; `|cte|` at 750-799 falls; governor share falls | lap time -- predicted gain is below the 0.30 s floor |
 | **`mbc_rzc_115`** (`mbc_b_lo` 646 + `rzc` 1.15) | 3e, MBC span B | effective target at stations 596-603 rises **+13.2 km/h**, and **nowhere else changes at all** (verified: 0.0000 km/h delta upstream, across the crest, and elsewhere) | lap time at rung 1; this is a bounded first step of three |
 | **`ksp_025`** | curvature source | effective target at binding stations +1.7 median, +4.5 max on the 700-780 approach | lap time; the predicted gain is far below the floor. **Watch `|cte|` at 750-799**: it adds +1.6-1.9 km/h exactly where the excursion is born |

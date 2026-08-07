@@ -206,3 +206,76 @@ currently biting**.
 The reason to keep watching: it is unclamped crest, so if anything ever raises entry speed into
 it -- `abrake_k`, or a future line change -- this is where a new excursion would appear first.
 Re-check off-track at stations 415-441 after any arm that changes the approach.
+
+---
+
+# Span A: the same study, and it CLOSES as a target
+
+`python tools/mbc_span_a.py`. Span A is s=470-608 m = **stations 442-567** (126 stations, 138 m).
+
+## Where its cost accumulates -- diffusely, not at a boundary
+
+Per-lap sub-section timing, bot vs human. **True cost +0.56 s** (the 0.75 s in the first budget
+was a mislabelled station range, see STATE_OF_KNOWLEDGE correction).
+
+| stations | s_m | m | bot s | hum s | lost | code3 | clamp binds |
+|---|---|---|---|---|---|---|---|
+| 442-456 | 471-486 | 16 | 0.47 | 0.47 | +0.00 | 0% | 100% |
+| 472-486 | 503-518 | 16 | 0.40 | 0.33 | +0.07 | 99% | 100% |
+| 502-516 | 536-551 | 17 | 0.51 | 0.42 | +0.09 | 100% | 100% |
+| **517-531** | 552-568 | 17 | 0.60 | 0.47 | **+0.13** | 74% | 100% |
+| 547-561 | 585-601 | 16 | 0.54 | 0.50 | +0.04 | 78% | 100% |
+| **TOTAL** | | 138 | 4.15 | 3.59 | **+0.56** | 68% | 100% |
+
+**No hotspot.** The worst 17-station slice is +0.13 s; the loss is spread evenly across the whole
+span. That alone distinguishes it from span B, where a single 8-station boundary error held
+48 km/h.
+
+## The clamp binds everywhere -- and the span is genuinely crest
+
+- window-min map inside span A is **1.550 at every one of the 126 stations**, so the 1.0 clamp
+  bites on **100%** of them, cutting 35%. `bind_code` 3 fires on 68% of ticks.
+- the stored map is at the **1.55 ceiling on 100%** of span-A stations -- the same free-boost
+  artifact as span B (clamped means boosting earns no feedback).
+- **68% of span A is genuinely convex.** Unlike span B, where the released stretch was concave,
+  most of span A really is the crest it was built to guard.
+- incidents: off-track **0.00%** inside and 0.00% outside on this log; sideslip p99 6.60 inside
+  vs 7.90 outside. Slightly cleaner inside, so nothing argues the guard is failing.
+
+## The only geometric error worth anything is the exit, and it is under the floor
+
+`mbc_a_lo` = 470 m sits at `d2z/ds2` −0.00003, i.e. right at the edge of convexity, and the crest
+begins ~30 m EARLIER (station 430, s=458, −0.00092). That is a **safety gap**: extending the clamp
+there would cost speed, not buy it.
+
+`mbc_a_hi` = 608 m is concave (+0.00347); the last convex station is **557 (s=596)**, so the clamp
+runs **11 m past the crest** over stations 558-567.
+
+Releasing exactly that tail, using the same use-time `rzc` mechanism:
+
+| config | eff target at the tail | delta | est. time |
+|---|---|---|---|
+| shipped | 104.2 | — | — |
+| `mbc_a_hi` 596 + `rzc` 1.15 | 119.8 | +15.6 | **+0.049 s** |
+| `mbc_a_hi` 596 + `rzc` 1.30 | 135.4 | +31.2 | +0.087 s |
+| `mbc_a_hi` 596 + `rzc` 1.55 | 161.4 | +57.3 | +0.134 s |
+
+Human at those stations: **122.7 km/h** against a shipped cap of 104.2.
+
+**Even a full release is worth ~0.134 s -- less than half the 0.30 s measurement floor.** A
+scored window could not distinguish it from noise, and full release licenses 161.4 km/h where
+the human drives 122.7.
+
+## Verdict: NO ARM. Span A closes as a target.
+
+1. its 0.56 s accumulates **diffusely**, not at a fixable boundary
+2. **68% of it is real crest**, so the clamp is mostly doing its job
+3. the one genuine boundary error (11 m at the exit) is worth **~0.05-0.13 s, under the floor**
+4. no incidents inside argue the guard is miscalibrated in the dangerous direction
+
+The 0.56 s is real but is **corner speed the clamp is entitled to hold**, given the geometry. It
+will only become available if the underlying grip/entry model improves, which is `abrake_k`'s
+territory, not a boundary edit.
+
+Recorded so a future session does not re-derive this: **span A was investigated to the same depth
+as span B and produced no arm.** The `mbc_a_lo` entry gap stays a watch item (see above).
