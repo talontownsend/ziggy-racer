@@ -130,8 +130,7 @@ number. **The two goals are in direct conflict.**
 This is the same window-min coupling that defeated the `ksp` map migration. Any edit to the
 learned map propagates 18 stations backwards.
 
-**Status: BLOCKED**, pending a mechanism that can release a clamp without either an untested step
-or an upstream regression. The geometric finding above stands.
+**Status: SOLVED at the USE level** -- see below. The storage-level fix stays rejected.
 
 ---
 
@@ -153,3 +152,55 @@ short at its entry and too long at its exit.
 Findings only. Every one inherits the same artifact-and-coupling problem documented above, so
 none is actionable until that is solved. Worth noting the direction: `mbc_a_lo` missing 30 m of
 crest is a **safety** gap, not a speed one, and is the more interesting of the four.
+
+---
+
+# The fix: a use-time cap (`rzc`), not a storage edit
+
+MBC itself clamps the *applied* `map_w` inside its span and never touches the stored map -- which
+is exactly why upstream stations kept their 1.55. The released zone can work the same way.
+
+```python
+if rzc > 0.0 and rzc_lo <= s_of[i0] <= rzc_hi:
+    map_w = min(map_w, rzc)
+```
+
+`mbc_b_lo` 638 -> 646 releases the 8 stations from MBC; `rzc` then caps them at use time.
+**`rzc = 1.0` reproduces the MBC clamp exactly**, so the pair is bit-identical to shipped, and the
+cap ramps from there in bounded steps. **No learner writes at any rung**, so the window-min
+coupling never enters.
+
+## Acceptance: verified
+
+| config | @596-603 | delta | @579-595 | @604-660 | elsewhere |
+|---|---|---|---|---|---|
+| `mbc_b_lo=646 rzc=1.0` | 88.1 | **+0.0** | 0.0000 | 0.0000 | 0.0000 |
+| `rzc=1.15` (rung 1) | 101.3 | **+13.2** | 0.0000 | 0.0000 | 0.0000 |
+| `rzc=1.30` (rung 2) | 114.5 | +26.4 | 0.0000 | 0.0000 | 0.0000 |
+| `rzc=1.55` (rung 3) | 136.5 | +48.4 | 0.0000 | 0.0000 | 0.0000 |
+
+**Bit-identical at default: max |diff| 0.00e+00 across all 1000 stations.** At every rung the
+delta is nonzero *only* at 596-603 -- zero upstream, zero across the crest, zero everywhere else.
+
+Queued as `mbc_rzc_115` (rung 1) after `abrake_k_075`; rungs 2 and 3 conditional on clean windows.
+
+---
+
+# `mbc_a_lo` safety gap: real crest, no incidents -- WATCH ITEM
+
+The 30 m of crest that `mbc_a_lo` misses (s=440-470, stations 415-441) is genuinely convex
+(`d2z/ds2` mean −0.00138, against a lap p5 of −0.00262), so the geometry is real.
+
+| | ticks | off-track | \|sideslip\| p99 | \|cte\| p90 | lat g p90 | slip p90 |
+|---|---|---|---|---|---|---|
+| **the gap** | 38,101 | **0.00%** | 3.50 | 2.82 | 1.53 | 1.60 |
+| lap baseline | 741,339 | 0.55% | 9.30 | 3.37 | 2.55 | 2.58 |
+
+**Zero off-track ticks in 38,101**, sideslip p99 2.7x lower than the lap, and none of the 25
+worst off-track stations lap-wide falls inside it. The hazard is real geometry that is **not
+currently biting**.
+
+**Recorded as a watch item, no entry.** It costs speed to fix and buys nothing measurable today.
+The reason to keep watching: it is unclamped crest, so if anything ever raises entry speed into
+it -- `abrake_k`, or a future line change -- this is where a new excursion would appear first.
+Re-check off-track at stations 415-441 after any arm that changes the approach.

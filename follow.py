@@ -660,7 +660,7 @@ def main() -> int:
                    "slip_brake": slip_brake_gain,
                    "cte_soft": cte_soft, "cte_hard": cte_hard,
                    "planner_alat": args.planner_alat, "planner_alat_k": args.planner_alat_k,
-                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "ff_thr": 0.0, "a_full": 14.6, "ff_itrim": 0.25, "gs_max": 0.0, "cte_ileak": 0.0, "aw_on": 0.0, "k_reserve": 1.0, "ksp_on": 0.0, "gov_floor": 0.0, "abrake_k": 0.0, "k_counter": args.k_counter, "r_thr": args.r_thr,
+                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "ff_thr": 0.0, "a_full": 14.6, "ff_itrim": 0.25, "gs_max": 0.0, "cte_ileak": 0.0, "aw_on": 0.0, "k_reserve": 1.0, "ksp_on": 0.0, "gov_floor": 0.0, "abrake_k": 0.0, "rzc": 1.0, "rzc_lo": 638.0, "rzc_hi": 646.0, "k_counter": args.k_counter, "r_thr": args.r_thr,
                    "understeer_gain": args.understeer_gain, "understeer_thr": args.understeer_thr},
                   open(args.tune_file, "w"), indent=2)
     except Exception:
@@ -1012,6 +1012,9 @@ def main() -> int:
     tune_hash = "boot"  # md5[:8] of the live tune.json; segments a log by config
     abrake_k = 0.0     # blend 0..1 into the curvature-aware braking budget.
                        # 0.0 = flat A_BRAKE=25.0 everywhere (shipped, bit-identical).
+    rzc = 1.0          # released-zone cap on map_w, applied at USE time in [rzc_lo, rzc_hi].
+    rzc_lo = 638.0     # 1.0 == the MBC clamp it replaces, so the pair (mbc_b_lo=646, rzc=1.0)
+    rzc_hi = 646.0     # is bit-identical to shipped. 0 = off.
     gov_floor = 0.0    # cross-track governor floor as a fraction of the ungoverned
                        # target, scaled by g. 0.0 = OFF (shipped behaviour exactly).
     ksp_on = 0.0       # 1.0 = v_curve reads the line-smoothed SPEED kappa (kappa_speed).
@@ -1307,6 +1310,9 @@ def main() -> int:
                     aw_on = float(_t.get("aw_on", aw_on))
                     cte_ileak = float(_t.get("cte_ileak", cte_ileak))
                     k_reserve = float(_t.get("k_reserve", k_reserve))
+                    rzc = float(_t.get("rzc", rzc))
+                    rzc_lo = float(_t.get("rzc_lo", rzc_lo))
+                    rzc_hi = float(_t.get("rzc_hi", rzc_hi))
                     abrake_k = float(_t.get("abrake_k", abrake_k))
                     gov_floor = float(_t.get("gov_floor", gov_floor))
                     ksp_on = float(_t.get("ksp_on", ksp_on))
@@ -1822,6 +1828,24 @@ def main() -> int:
                 # generalized form: survey-derived zone instead of literals
                 if mbc_geo > 0.0 and mbc_geo_zone[i0]:
                     map_w = min(map_w, mbc_geo)
+                # RELEASED-ZONE CAP (rzc). Applied at USE time to map_w, exactly like MBC above,
+                # and deliberately NOT by editing the stored map.
+                #
+                # Moving mbc_b_lo 638 -> 646 releases 8 stations whose STORED map is 1.5500 -- the
+                # ceiling, pinned there since 08-02 across ~20 snapshots. MBC clamped them to 1.0 in
+                # use since 07-08, so boosting above 1.0 was free and earned no feedback: releasing
+                # the boundary alone would apply an untested +48.4 km/h in one step.
+                #
+                # Resetting the STORED map to 1.0 there does not work: map_w is a window-MIN over
+                # the next 18 stations, so writing 1.0 at 596-603 drags down 17 upstream stations
+                # (579-595) that sit outside the MBC span and read 1.55 through their lookahead,
+                # costing them 47-62 km/h. A use-time cap has no such reach -- it changes only the
+                # station it is evaluated at, which is precisely why MBC never disturbed upstream.
+                #
+                # rzc=1.0 reproduces the MBC clamp exactly, so mbc_b_lo=646 + rzc=1.0 is
+                # bit-identical to shipped. Ramp 1.15 -> 1.30 -> 1.55 for bounded steps.
+                if rzc > 0.0 and rzc_lo <= s_of[i0] <= rzc_hi:
+                    map_w = min(map_w, rzc)
                 sfac = float(surface_fac[i0]) if scap_on > 0.0 else 1.0
                 _c = v_curve * map_w * min(v_curve_trim, 1.0) * sfac
                 if _c < target_v: bind_code = 3
