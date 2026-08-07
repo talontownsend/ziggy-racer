@@ -139,9 +139,16 @@ where a future session should push hardest.
 | Straight-line and top-end | ~0.4 | main straight 0.21 + fast 260-340 0.25, partly gearing/power | low |
 | Unattributed | ~0.4 | | -- |
 
-**The single largest unexplored item is MBC span A at 0.75 s.** Its boundaries were audited today
-(it *misses* 30 m of real crest at entry and clamps 12 m of non-crest at exit) but its time cost
-was only measured at the end of the session, and no arm targets it.
+**Sections investigated to full depth and CLOSED as targets** (each with a doc a future session
+can trust): MBC span A (+0.56 s, `MBC_SPAN_B_0806.md`) -- diffuse, 68% genuine crest, the one real
+boundary error worth 0.05-0.13 s, under the floor. start/T1 (+0.44 s, `T1_SECTION_0806.md`) --
+real, not launch contamination, but cap-limited at a FLOORED map with the car at full lock, so the
+low cap is the learner's earned answer and there is nothing to release.
+
+Both share a root with the excursion: **the car runs out of steering authority and the learner
+cuts the map in response.** That makes `abrake_k_075` the arm with the widest reach -- braking
+earlier means less speed at turn-in, less lock demanded, and it should improve T1 and the
+inherited corners without touching them.
 
 ---
 
