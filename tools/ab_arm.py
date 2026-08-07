@@ -66,6 +66,7 @@ def scan(t_from=None, t_to=None):
     s_of = np.concatenate([[0.0], np.cumsum(seg)])[:-1]
 
     laps, stalls, comp = [], [], []
+    ot_on = ot_tot = 0            # off-track rate: the axis a lap-time median cannot see
     # Lap state for the lap_t-RESET detector. lap_no is NOT unique within a follower
     # session: the event restarts and lap numbering begins again, so keying laps by
     # (sess, lap_no) merges ~4 real laps and reports max(lap_t) over all of them. On a
@@ -87,6 +88,11 @@ def scan(t_from=None, t_to=None):
                 lp_lt, lp_n, lp_ok, lp_valid, lp_pt = None, 0, 0, False, None
             prev = t
             sess_start.setdefault(sess, t)
+            ot_tot += 1
+            try:
+                ot_on += 1 if float(r.get("on_track", 1)) > 0.5 else 0
+            except (TypeError, ValueError):
+                ot_on += 1
             if float(r["race_pos"]) < 1:
                 srun, prev_s = 0, None
                 lp_lt, lp_n, lp_ok, lp_valid, lp_pt = None, 0, 0, False, None
@@ -149,6 +155,7 @@ def scan(t_from=None, t_to=None):
         "complex_med": float(np.median(comp)) if comp else None,
         "complex_best": float(min(comp)) if comp else None,
         "sessions": sess,
+        "offtrack_pct": (100.0 * (1.0 - ot_on / ot_tot)) if ot_tot else None,
     }
 
 
@@ -177,6 +184,19 @@ def restore_learner(tag):
             shutil.copy2(src, os.path.join(REC, f))
             done.append(f)
     return done
+
+
+def map_wmin(window=18):
+    """Window-MIN of the learned vtrim map -- what the speed cap actually reads. A collapsing
+    map is how a bad arm does lasting damage (measured 1.3900 -> 1.1329 in 75 min, and
+    1.4160 -> 1.2729 in 23), and no lap-time or stall gate sees it until the harm is done."""
+    try:
+        m = np.load(os.path.join(REC, "vtrim_map.npz"))["map"].astype(float)
+    except Exception:
+        return None
+    n = len(m)
+    idx = (np.arange(n)[:, None] + np.arange(window)[None, :]) % n
+    return float(m[idx].min(axis=1).mean())
 
 
 def now_t():
@@ -215,6 +235,10 @@ def main():
     ap.add_argument("--abort-stalls", type=int, default=5, help="stalls in any 15-min slice")
     ap.add_argument("--abort-med", type=float, default=30.8, help="median over >=25 laps "
                     "(lap_t-reset detector reads ~0.7 s lower than the pre-08-06 lap_no keying)")
+    ap.add_argument("--abort-offtrack", type=float, default=None,
+                    help="abort if off-track %% of racing ticks exceeds this")
+    ap.add_argument("--abort-mapwmin", type=float, default=None,
+                    help="abort if the learned map's window-MIN falls below this (learner damage)")
     ap.add_argument("--abort-lapmin", type=int, default=10,
                     help="abort if the trailing 15 min has fewer than this many laps "
                          "(healthy 24-29); catches arms no median gate can see")
@@ -287,6 +311,18 @@ def main():
                 # for 75 minutes. Median gate: never met its sample floor. Stall gate: 1-2,
                 # under the limit. Every guard read nominal while the car limped.
                 # A healthy config does 24-29 laps per 15 min on this track.
+                if (a.abort_offtrack is not None and m15.get("offtrack_pct") is not None
+                        and elapsed_min >= 10.0 and m15["offtrack_pct"] > a.abort_offtrack):
+                    aborted = (f"ABORT: off-track {m15['offtrack_pct']:.2f}% of racing ticks in the "
+                               f"trailing 15 min (limit {a.abort_offtrack}). A lap-time median cannot "
+                               f"see this: dirty laps are EXCLUDED, not counted.")
+                    break
+                if a.abort_mapwmin is not None:
+                    _w = map_wmin()
+                    if _w is not None and _w < a.abort_mapwmin:
+                        aborted = (f"ABORT: learned-map window-MIN {_w:.4f} below {a.abort_mapwmin} "
+                                   f"-- the arm is damaging the learner, which outlives the window.")
+                        break
                 if (t_score_from is not None and elapsed_min >= a.equil + 15.0
                         and m15["n_laps"] < a.abort_lapmin):
                     aborted = (f"ABORT: only {m15['n_laps']} laps in the trailing 15 min "
