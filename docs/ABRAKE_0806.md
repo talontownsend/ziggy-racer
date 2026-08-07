@@ -53,3 +53,45 @@ Lowering it has not been tested.** The measurement says it should be.
 Not implemented and not queued — reported for the decision. It is offline-reproducible: the
 braking pass is pure arithmetic over `vplan`, already replicated exactly in `tools/tv_trace.py`
 (median error +0.00 km/h).
+
+---
+
+# Implemented as `abrake_k`, and the rung is 0.75 (measured, not extrapolated)
+
+`abrake_of` interpolates the human's achieved deceleration by each station's LATERAL DEMAND
+(`frac = v^2*kappa / planner_alat`): a corner needing all the grip laterally leaves least for
+braking. Median budget **18.1** m/s^2 against the shipped flat **25.0** (-27%).
+
+`abrake_k` blends 0..1; at 0 it short-circuits to the flat 25.0 and is bit-identical.
+
+## The response is NON-LINEAR, and my first rung choice was wrong
+
+| k | max tv drop (700-760) | onset s_m | m earlier | new brake stns | straight-line |
+|---|---|---|---|---|---|
+| 0.00 | 0.0 | — | 0.0 | 0 | 0 |
+| 0.25 | 0.0 | — | **0.0** | 4 | 0 |
+| 0.50 | 0.8 | — | **0.0** | 8 | 0 |
+| **0.75** | 2.9 | **769** | **11.1** | 11 | **0** |
+| 1.00 | 6.4 | 765 | 15.5 | 17 | **0** |
+
+Shipped onset s=780 m; human s=761 m.
+
+**k=0.25 and k=0.5 move the excursion-corner onset by zero metres.** The braking pass takes a
+`min` over a window, so the binding station does not switch until the budget drops far enough.
+I queued 0.5 first by extrapolating from the k=1 result; measuring each blend showed it would
+have been a null window by construction. **0.75 is the lowest blend that does anything at the
+corner that matters.**
+
+Straight-line braking is untouched at every blend: all new braking stations sit at
+`|steer|` 0.28-0.33 where the car already brakes on 24-84% of ticks.
+
+## Front lock: a separate candidate, not folded in
+
+At full lock the bot's `cs_front` p50 is **2.42** with a slip ANGLE of only **1.04 deg**, so the
+fronts are locked *longitudinally* on 90% of braking ticks. That is why `A_BRAKE` is calibrated
+to the human (16.1 at lock) rather than the bot (14.1) -- calibrating on the bot would bake in
+the defect.
+
+But the human runs `cs_front` **3.13** at lock too, so front saturation is characteristic of this
+car rather than purely behavioural. A brake taper as a function of `|steer|` remains a **separate
+candidate**, neither implemented nor queued.
