@@ -639,7 +639,7 @@ def main() -> int:
                    "slip_brake": slip_brake_gain,
                    "cte_soft": cte_soft, "cte_hard": cte_hard,
                    "planner_alat": args.planner_alat, "planner_alat_k": args.planner_alat_k,
-                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "ff_thr": 0.0, "a_full": 14.6, "ff_itrim": 0.25, "gs_max": 0.0, "cte_ileak": 0.0, "aw_on": 0.0, "k_reserve": 1.0, "k_counter": args.k_counter, "r_thr": args.r_thr,
+                   "slip_target": args.slip_target, "pad_clamp": 0.0, "spin_thr": 0.0, "ff_thr": 0.0, "a_full": 14.6, "ff_itrim": 0.25, "gs_max": 0.0, "cte_ileak": 0.0, "aw_on": 0.0, "k_reserve": 1.0, "ksp_on": 0.0, "k_counter": args.k_counter, "r_thr": args.r_thr,
                    "understeer_gain": args.understeer_gain, "understeer_thr": args.understeer_thr},
                   open(args.tune_file, "w"), indent=2)
     except Exception:
@@ -989,6 +989,8 @@ def main() -> int:
         return float(np.interp(np.log(min(ak, kcv[-1])), np.log(kcv), row))
     # --- chain-fix A/B candidates (2026-07-05), all default OFF; hot-reloadable ---
     tune_hash = "boot"  # md5[:8] of the live tune.json; segments a log by config
+    ksp_on = 0.0       # 1.0 = v_curve reads the line-smoothed SPEED kappa (kappa_speed).
+                       # Steering FF is untouched either way (kappa_ref stays its source).
     k_reserve = 1.0    # clip cross-track correction to (1-|ff|)*k_reserve. 0 = OFF.
                        # DEPLOYED 08-06 at 1.0: anti-windup, full lock still reachable.
                        # k<1 makes |steer| <= |ff|+(1-|ff|)*k, i.e. below full lock:
@@ -1280,6 +1282,9 @@ def main() -> int:
                     aw_on = float(_t.get("aw_on", aw_on))
                     cte_ileak = float(_t.get("cte_ileak", cte_ileak))
                     k_reserve = float(_t.get("k_reserve", k_reserve))
+                    ksp_on = float(_t.get("ksp_on", ksp_on))
+                    if planner is not None:
+                        planner.ksp = max(0.0, min(1.0, ksp_on))   # BLEND 0..1
                     cr_on = float(_t.get("cr_on", cr_on))
                     th_on = float(_t.get("th_on", th_on))
                     hd_on = float(_t.get("hd_on", hd_on))

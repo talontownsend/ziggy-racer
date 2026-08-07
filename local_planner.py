@@ -57,6 +57,7 @@ class LocalPlanner:
                  n_pts=24, kappa_margin=0.85, d_max=8.0,
                  w_jerk=0.4, w_len=0.015, w_merge=6.0, w_dev=0.3, w_prev=2.0,
                  big=100.0, hysteresis=0.92, w_speed=0.0, kappa_pct=100.0, w_hyst=0.0,
+                 kappa_speed_w=9,
                  d0p_max=2.6):
         """line: (N,2) closed reference (world x,z). a_lat: lateral grip m/s^2."""
         self.line = np.asarray(line, float)
@@ -119,6 +120,36 @@ class LocalPlanner:
         # also weakened turn-in -> understeer wide -> off-track. So keep it tight (w=5 ~= 2.5 m);
         # de-kink the SPEED path separately (kappa_pct) if needed, NOT by smoothing the FF source.
         self.kappa_ref = _smooth_closed(kmag * sign, 5)
+        # SPEED-PATH curvature, used ONLY by max_kappa_line_ahead (the v_curve clamp).
+        #
+        # kappa_ref above is computed from a 3-point Menger stencil at ~1.06 m spacing, which is
+        # acutely sensitive to noise in the line's own points: through corner 2 it swings between
+        # R=703 m and R=23 m over a few metres. With kappa_pct=100 the 18 m window is a raw MAX,
+        # so it harvests exactly those spikes. Measured 08-06: the resulting cap is 43 km/h below
+        # demonstrated human pace at stations 595-607, and the R=23 m spike is provably not
+        # geometry -- a human at 135 km/h through R=23 would need 6.1 g on a 2.7-3.0 g car.
+        #
+        # Smoothing the LINE before differentiating removes the point noise at its source, which
+        # post-smoothing the curvature cannot (5-pt stencil and w=11 kappa smoothing both fall
+        # short). This array must NOT be used for the steering feedforward: kappa_ref is dual-use
+        # and widening ITS smoothing previously weakened turn-in into understeer and off-tracks.
+        # Both arrays are always built so the choice is a hot key, not a relaunch.
+        _lw = int(max(1, kappa_speed_w))
+        if _lw > 1:
+            _ln = np.column_stack([_smooth_closed(self.line[:, 0], _lw),
+                                   _smooth_closed(self.line[:, 1], _lw)])
+            _q0 = np.roll(_ln, 1, 0); _q2 = np.roll(_ln, -1, 0)
+            _a = np.hypot(*(_ln - _q0).T); _b = np.hypot(*(_q2 - _ln).T); _c = np.hypot(*(_q2 - _q0).T)
+            _ar = 0.5 * np.abs((_ln[:, 0]-_q0[:, 0])*(_q2[:, 1]-_q0[:, 1]) -
+                               (_ln[:, 1]-_q0[:, 1])*(_q2[:, 0]-_q0[:, 0]))
+            _den = _a * _b * _c
+            _km = np.where(_den > 1e-9, 4 * _ar / _den, 0.0)
+            _sg = np.sign((_ln[:, 0]-_q0[:, 0])*(_q2[:, 1]-_q0[:, 1]) -
+                          (_ln[:, 1]-_q0[:, 1])*(_q2[:, 0]-_q0[:, 0]))
+            self.kappa_speed = _smooth_closed(_km * _sg, 5)
+        else:
+            self.kappa_speed = self.kappa_ref
+        self.ksp = 0.0                    # blend 0..1, hot-set from tune.json (ksp_on)
         # temporal-consistency memory
         self.prev_dn = None      # chosen lateral profile on a normalized [0,1] grid
         self.prev_L = None
@@ -251,6 +282,14 @@ class LocalPlanner:
         s = float(plan["s0"]) + float(ld)
         return float(self._ref_at(np.array([s]))[2][0])
 
+    @property
+    def use_speed_kappa(self):
+        return self.ksp >= 1.0
+
+    @use_speed_kappa.setter
+    def use_speed_kappa(self, v):
+        self.ksp = 1.0 if v else 0.0
+
     def max_kappa_line_ahead(self, plan, dist, pct=None):
         """Robust |LINE curvature| within `dist` ahead of the car (STABLE corner-speed cap).
         The merge-path curvature (max_kappa_ahead) re-plans every tick and BREATHES with the
@@ -263,7 +302,16 @@ class LocalPlanner:
         s0 = float(plan["s0"])
         ss = np.mod(np.linspace(s0, s0 + max(dist, 1.0), 16), self.total_s)
         i = np.clip(np.searchsorted(self.cum_s, ss, side="right") - 1, 0, self.N - 1)
-        a = np.abs(self.kappa_ref[i])
+        # SPEED PATH ONLY. kappa_ref stays the steering-FF source (dual-use; see __init__).
+        # BLEND, not a switch: ksp=0 reproduces today bit-for-bit, ksp=1 is full kappa_speed.
+        # A blend lets the cap be walked up while the learner adapts continuously, which
+        # migrating the map cannot do: map_w is a WINDOW-MIN over 18 stations, so rescaling
+        # per station changes which station IS the min (measured: p95 error 19.9 km/h,
+        # 15 stations pushed below the 0.80 floor, window-min 1.4129 -> 1.2882).
+        _k = self.kappa_ref if self.ksp <= 0.0 else (
+            self.kappa_speed if self.ksp >= 1.0 else
+            self.kappa_ref + self.ksp * (self.kappa_speed - self.kappa_ref))
+        a = np.abs(_k[i])
         return float(np.percentile(a, pct)) if a.size else 0.0
 
     def max_kappa_ahead(self, plan, dist, pct=None):
